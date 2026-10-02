@@ -226,6 +226,51 @@ The first run asks the user to grant these OAuth scopes. mutter asks again whene
 | `chat.users.sections.readonly` | sidebar sections |
 | `pubsub` | pulling live events |
 
+## Limitations
+
+Planned improvements are in [ROADMAP.md](ROADMAP.md). The ones under Chat API can't be fixed in mutter.
+
+### Chat API
+
+- Opening a thread clears its markers only in mutter. The API can read a thread's read state but not write it.
+- `FOR_YOU` notifications fire on @mentions only. The API doesn't expose which threads you follow.
+- Card buttons that call Chat apps don't work, and interactive card widgets are skipped. Both need app authentication.
+
+### Reading
+
+- Opening a space marks all of it read, as the web client does, however far you scroll.
+- At startup, spaces with no activity for 30 days count as read.
+- History loads 200 messages at a time.
+- There's no message search.
+- DMs and group chats whose other members have all left the organization are hidden.
+- Only one account at a time.
+
+### Writing
+
+- An @mention notifies only when completed with tab. A typed `@name` stays plain text.
+- Editing a message sends its mentions back as plain text.
+- `/dm NAME` only knows members of the spaces opened since startup. Use an email address for anyone else.
+
+### Images and files
+
+- Images need a terminal with kitty graphics and Unicode placeholders, such as Ghostty or kitty.
+- WebP images and images inside cards show as text.
+- GIFs play their first 150 frames.
+- Images keep their size when the window is resized, until mutter restarts.
+- Drive files and GIFs open in the browser. `/save` can't download them without a Drive scope.
+
+### Startup and live updates
+
+- The first start takes about 30 seconds to resolve DM and group-chat names. Later starts use a cache.
+- Live updates need a Pub/Sub topic. Without one, mutter only refreshes when a space is opened.
+- On the shared topic, group members can see each other's event metadata. See [Isolating users](#isolating-users).
+
+### Platforms
+
+- macOS and Linux only.
+- On Linux, storing the login token needs a Secret Service, such as GNOME Keyring or KeePassXC.
+- The macOS binary isn't signed. Homebrew and `scripts/install.sh` install it without Gatekeeper prompts, but a browser download gets blocked.
+
 ## Development
 
 Needs Go, [just](https://github.com/casey/just) and golangci-lint. gosec and govulncheck run with `go tool`, pinned in `go.mod`. `AGENTS.md` describes the code layout and the rules for changing it.
@@ -241,6 +286,8 @@ Needs Go, [just](https://github.com/casey/just) and golangci-lint. gosec and gov
 | `just snapshot` | build all release targets into `dist/` |
 
 `just` alone lists every recipe.
+
+Planned work is in [ROADMAP.md](ROADMAP.md).
 
 ## Debugging
 
