@@ -41,5 +41,5 @@ gcloud steps done. Three steps have no CLI or API, so do them in the console:
 
 Then build mutter with the client baked in, so users need no setup:
 
-   go build -ldflags "-X main.clientID=<ID> -X main.clientSecret=<SECRET>" .
+   go build -ldflags "-X main.clientID=<ID> -X main.clientSecret=<SECRET> -X main.topic=projects/$project/topics/$topic" -o mutter .
 EOF

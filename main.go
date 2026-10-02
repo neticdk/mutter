@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -40,13 +41,29 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	_, err = tea.NewProgram(newModel(ctx, c)).Run()
+	ch := make(chan tea.Msg, 64)
+	if cfg.Topic != "" {
+		go runEvents(ctx, ts, c, cfg.Topic, ch)
+	} else {
+		ch <- liveMsg{errors.New("no topic configured, live updates off")}
+	}
+	var opts []tea.ProgramOption
+	if debugDir != "" {
+		f, err := os.Create(filepath.Join(debugDir, "tty.out"))
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		opts = append(opts, tea.WithOutput(teeFile{os.Stdout, f}))
+	}
+	_, err = tea.NewProgram(newModel(ctx, c, ch), opts...).Run()
+	fmt.Print(kittyClear)
 	return err
 }
 
-// Set with -ldflags "-X main.clientID=... -X main.clientSecret=...".
+// Set with -ldflags "-X main.clientID=... -X main.clientSecret=... -X main.topic=...".
 // Desktop OAuth client secrets are not confidential.
-var clientID, clientSecret string
+var clientID, clientSecret, topic string
 
 func loadConfig() (config, error) {
 	dir, err := os.UserConfigDir()
@@ -56,7 +73,7 @@ func loadConfig() (config, error) {
 	path := filepath.Join(dir, "mutter", "config.json")
 	b, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) && clientID != "" {
-		return config{ClientID: clientID, ClientSecret: clientSecret}, nil
+		return config{ClientID: clientID, ClientSecret: clientSecret, Topic: topic}, nil
 	}
 	if err != nil {
 		return config{}, fmt.Errorf("read OAuth client config: %w", err)
@@ -68,6 +85,7 @@ func loadConfig() (config, error) {
 	if cfg.ClientID == "" || cfg.ClientSecret == "" {
 		return config{}, fmt.Errorf("%s: client_id and client_secret are required", path)
 	}
+	cfg.Topic = cmp.Or(cfg.Topic, topic)
 	return cfg, nil
 }
 
@@ -104,6 +122,18 @@ func debugJSON(label string, v any) {
 	}
 	b, err := json.Marshal(v)
 	log.Printf("%s: %s err=%v", label, b, err)
+}
+
+// teeFile records everything written to the terminal. It keeps the
+// terminal's Fd so Bubble Tea still detects a TTY.
+type teeFile struct {
+	*os.File
+	rec io.Writer
+}
+
+func (t teeFile) Write(b []byte) (int, error) {
+	_, _ = t.rec.Write(b)
+	return t.File.Write(b)
 }
 
 // debugKey turns a long resource name into a short file name.

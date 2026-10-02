@@ -28,6 +28,7 @@ var (
 	threadStyle = lipgloss.NewStyle().Border(lipgloss.HiddenBorder(), false, false, false, true).PaddingLeft(1)
 	cursorStyle = threadStyle.BorderStyle(lipgloss.ThickBorder()).BorderForeground(lipgloss.Color("5"))
 	errStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
+	liveStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
 )
 
 type (
@@ -40,8 +41,9 @@ type (
 		space   string
 		threads []*thread
 	}
-	sentMsg *chat.Message
-	errMsg  error
+	sentMsg  *chat.Message
+	errMsg   error
+	eventMsg struct{ inner tea.Msg } // from runEvents
 )
 
 type model struct {
@@ -58,6 +60,10 @@ type model struct {
 	imgs   *images
 	titles map[string]string // title cache, see titleCache
 
+	events  <-chan tea.Msg
+	live    bool
+	liveErr error
+
 	vp viewport.Model
 	ta textarea.Model
 
@@ -70,7 +76,7 @@ type model struct {
 	width  int
 }
 
-func newModel(ctx context.Context, c *client) model {
+func newModel(ctx context.Context, c *client, events <-chan tea.Msg) model {
 	ta := textarea.New()
 	ta.Placeholder = "Message"
 	ta.ShowLineNumbers = false
@@ -85,11 +91,15 @@ func newModel(ctx context.Context, c *client) model {
 	f := textinput.New()
 	f.Prompt = "switch to: "
 
-	return model{ctx: ctx, c: c, cur: -1, ta: ta, filter: f, vp: viewport.New(), imgs: newImages(), status: "loading spaces…"}
+	return model{ctx: ctx, c: c, events: events, cur: -1, ta: ta, filter: f, vp: viewport.New(), imgs: newImages(), status: "loading spaces…"}
 }
 
 func (m model) Init() tea.Cmd {
-	return m.loadSpaces
+	return tea.Batch(m.loadSpaces, m.waitEvent, tea.Raw(kittyClear))
+}
+
+func (m model) waitEvent() tea.Msg {
+	return eventMsg{<-m.events}
 }
 
 func (m model) loadSpaces() tea.Msg {
@@ -155,6 +165,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// header, input box with border, status line
 		m.vp.SetWidth(msg.Width)
 		m.vp.SetHeight(max(1, msg.Height-1-(m.ta.Height()+2)-1))
+		m.imgs.resize(msg.Width, m.vp.Height())
 		m.render()
 		return m, nil
 
@@ -211,7 +222,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case imageMsg:
-		seq, anim := m.imgs.add(msg, m.width)
+		seq, anim := m.imgs.add(msg)
 		if seq == "" {
 			return m, nil
 		}
@@ -228,6 +239,39 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case sentMsg:
 		m.add(msg)
 		return m, nil
+
+	case eventMsg:
+		next, cmd := m.Update(msg.inner)
+		return next, tea.Batch(cmd, m.waitEvent)
+
+	case liveMsg:
+		m.live, m.liveErr = msg.err == nil, msg.err
+		return m, nil
+
+	case messageEvent:
+		switch msg.kind {
+		case "created":
+			m.add(msg.msg)
+			return m, m.imgs.fetch(m.ctx, m.c, []*chat.Message{msg.msg})
+		case "updated":
+			m.replace(msg.msg)
+		case "deleted":
+			m.remove(msg.name)
+		}
+		return m, nil
+
+	case spaceChangedMsg:
+		if !slices.ContainsFunc(m.spaces, func(s space) bool { return s.name == msg.space }) {
+			// ponytail: newly joined spaces show up on the next start, add them live when that matters
+			return m, nil
+		}
+		return m, func() tea.Msg {
+			t, err := m.c.spaceTitle(m.ctx, msg.space)
+			if err != nil {
+				return errMsg(err)
+			}
+			return titlesMsg{titles: map[string]string{msg.space: t}}
+		}
 
 	case errMsg:
 		log.Printf("error: %v", msg)
@@ -399,6 +443,10 @@ func (m *model) add(msg *chat.Message) {
 	if m.cur < 0 || !strings.HasPrefix(msg.Name, m.spaces[m.cur].name+"/") {
 		return
 	}
+	// A message sent from here arrives again as an event.
+	if m.replace(msg) {
+		return
+	}
 	name := threadName(msg)
 	if i := slices.IndexFunc(m.threads, func(t *thread) bool { return t.name == name }); i >= 0 {
 		m.threads[i].msgs = append(m.threads[i].msgs, msg)
@@ -407,6 +455,48 @@ func (m *model) add(msg *chat.Message) {
 		m.threads = append(m.threads, &thread{name: name, msgs: []*chat.Message{msg}})
 		if atBottom {
 			m.cursor = len(m.threads) - 1
+		}
+	}
+	m.render()
+}
+
+// find locates a message by name in the open space.
+func (m *model) find(name string) (ti, mi int, ok bool) {
+	for ti, t := range m.threads {
+		for mi, msg := range t.msgs {
+			if msg.Name == name {
+				return ti, mi, true
+			}
+		}
+	}
+	return 0, 0, false
+}
+
+// replace swaps in an edited message and reports whether it was shown.
+func (m *model) replace(msg *chat.Message) bool {
+	ti, mi, ok := m.find(msg.Name)
+	if !ok {
+		return false
+	}
+	m.threads[ti].msgs[mi] = msg
+	m.render()
+	return true
+}
+
+// remove drops a deleted message, and its thread once the thread is empty.
+func (m *model) remove(name string) {
+	ti, mi, ok := m.find(name)
+	if !ok {
+		return
+	}
+	t := m.threads[ti]
+	t.msgs = slices.Delete(t.msgs, mi, mi+1)
+	if len(t.msgs) == 0 {
+		m.threads = slices.Delete(m.threads, ti, ti+1)
+		m.cursor = min(m.cursor, max(0, len(m.threads)-1))
+		if m.inThread == t {
+			m.setThread(nil)
+			return
 		}
 	}
 	m.render()
@@ -487,6 +577,11 @@ func (m model) View() tea.View {
 	if m.cur >= 0 {
 		title = m.spaces[m.cur].title
 	}
+	if m.live {
+		title += " " + liveStyle.Render("● live")
+	} else {
+		title += " " + dimStyle.Render("○ offline")
+	}
 	hint := "↑/↓ select · enter open thread · type to start a thread · ctrl+k switch · /quit"
 	if m.inThread != nil {
 		title += " › thread"
@@ -497,6 +592,9 @@ func (m model) View() tea.View {
 		body = m.switcherView()
 	}
 	status := m.status
+	if status == "" && m.liveErr != nil {
+		status = errStyle.Render("live updates: " + m.liveErr.Error())
+	}
 	if status == "" {
 		status = dimStyle.Render(hint)
 	}

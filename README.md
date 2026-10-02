@@ -54,10 +54,12 @@ The Chat API rejects calls until the project has a Chat app configuration, even 
 Bake the client into the binary. Desktop client secrets are not confidential, because Google treats installed apps as public clients.
 
 ```
-go build -ldflags "-X main.clientID=<ID> -X main.clientSecret=<SECRET>" -o mutter .
+go build -ldflags "-X main.clientID=<ID> -X main.clientSecret=<SECRET> -X main.topic=projects/<PROJECT_ID>/topics/mutter-events" -o mutter .
 ```
 
-Hand out the resulting `mutter` binary.
+Hand out the resulting `mutter` binary. Without `main.topic`, mutter runs without live updates.
+
+On start, mutter subscribes the user to events from all their spaces through the Workspace Events API, delivered to the topic. Each machine pulls from its own filtered Pub/Sub subscription, which deletes itself after 31 days unused.
 
 ## Setup (per user)
 
@@ -66,7 +68,7 @@ There is no setup with a baked-in build. The first run opens a browser for login
 To use a different OAuth client, for example during development, write it to `~/Library/Application Support/mutter/config.json` (macOS) or `~/.config/mutter/config.json` (Linux). The file takes precedence over the baked-in client:
 
 ```json
-{"client_id": "....apps.googleusercontent.com", "client_secret": "..."}
+{"client_id": "....apps.googleusercontent.com", "client_secret": "...", "topic": "projects/<PROJECT_ID>/topics/mutter-events"}
 ```
 
 ## Usage

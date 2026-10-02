@@ -12,6 +12,7 @@ import (
 	"image/png"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"strconv"
@@ -20,13 +21,14 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	xdraw "golang.org/x/image/draw"
+	"golang.org/x/sys/unix"
 	"google.golang.org/api/chat/v1"
 )
 
 const (
 	maxImageBytes = 20 << 20
 	maxImageCols  = 60
-	maxImageRows  = 20
 	maxGIFFrames  = 150
 )
 
@@ -35,9 +37,16 @@ const (
 // and redraws them like any other text.
 type images struct {
 	enabled bool
+	layout  layout
 	nextID  int
 	byRef   map[string]*img
 	byID    map[int]*img
+}
+
+// layout is the room images get, captured when a download starts.
+type layout struct {
+	cellW, cellH     int // pixels, from cellSize
+	maxCols, maxRows int
 }
 
 type img struct {
@@ -53,11 +62,11 @@ type img struct {
 }
 
 type imageMsg struct {
-	ref    string
-	pngs   [][]byte // one per frame
-	delays []time.Duration
-	w, h   int
-	err    error
+	ref        string
+	pngs       [][]byte // one per frame, scaled to fill cols×rows
+	delays     []time.Duration
+	cols, rows int
+	err        error
 }
 
 type animMsg struct{ ref string }
@@ -65,7 +74,19 @@ type animMsg struct{ ref string }
 func newImages() *images {
 	enabled := os.Getenv("TERM_PROGRAM") == "ghostty" || os.Getenv("TERM") == "xterm-kitty" || os.Getenv("KITTY_WINDOW_ID") != ""
 	log.Printf("images: enabled=%v TERM=%q TERM_PROGRAM=%q TERM_PROGRAM_VERSION=%q", enabled, os.Getenv("TERM"), os.Getenv("TERM_PROGRAM"), os.Getenv("TERM_PROGRAM_VERSION"))
-	return &images{enabled: enabled, byRef: map[string]*img{}, byID: map[int]*img{}}
+	return &images{enabled: enabled, layout: layout{8, 16, maxImageCols, 20}, byRef: map[string]*img{}, byID: map[int]*img{}}
+}
+
+// resize records the message area's size, in cells, for later downloads.
+func (im *images) resize(width, height int) {
+	cw, ch := cellSize()
+	im.layout = layout{
+		cellW:   cw,
+		cellH:   ch,
+		maxCols: min(maxImageCols, max(1, width-6)),
+		maxRows: min(len(diacritics), max(5, height*2/3)),
+	}
+	log.Printf("images: layout %+v", im.layout)
 }
 
 func imageRef(a *chat.Attachment) string {
@@ -88,7 +109,8 @@ func (im *images) fetch(ctx context.Context, c *client, msgs []*chat.Message) te
 			return
 		}
 		im.byRef[ref] = &img{}
-		cmds = append(cmds, func() tea.Msg { return download(ref, do) })
+		lay := im.layout
+		cmds = append(cmds, func() tea.Msg { return download(ref, do, lay) })
 	}
 	for _, m := range msgs {
 		for _, a := range m.Attachment {
@@ -108,9 +130,11 @@ func (im *images) fetch(ctx context.Context, c *client, msgs []*chat.Message) te
 	return tea.Batch(cmds...)
 }
 
-// download fetches an image and re-encodes it as PNG, the one format every
-// kitty-protocol terminal accepts. GIFs become one PNG per frame.
-func download(ref string, do func() (*http.Response, error)) imageMsg {
+// download fetches an image, shrinks it when it's larger than its cells, and
+// re-encodes it as PNG, the one format every kitty-protocol terminal accepts.
+// GIFs become one PNG per frame. The terminal scales the result to fill the
+// cells.
+func download(ref string, do func() (*http.Response, error), lay layout) imageMsg {
 	resp, err := do()
 	if err != nil {
 		return imageMsg{ref: ref, err: err}
@@ -128,9 +152,9 @@ func download(ref string, do func() (*http.Response, error)) imageMsg {
 	}
 	debugWrite(key+".orig", data)
 	if g, err := gif.DecodeAll(bytes.NewReader(data)); err == nil {
-		msg := decodeGIF(g)
+		msg := decodeGIF(g, lay)
 		msg.ref = ref
-		log.Printf("image %s: format=gif frames=%d size=%dx%d err=%v", key, len(msg.pngs), msg.w, msg.h, msg.err)
+		log.Printf("image %s: format=gif frames=%d cells=%dx%d err=%v", key, len(msg.pngs), msg.cols, msg.rows, msg.err)
 		return msg
 	}
 	src, format, err := image.Decode(bytes.NewReader(data))
@@ -138,27 +162,29 @@ func download(ref string, do func() (*http.Response, error)) imageMsg {
 		log.Printf("image %s: decode: %v", key, err)
 		return imageMsg{ref: ref, err: err}
 	}
-	log.Printf("image %s: format=%s type=%T bounds=%v", key, format, src, src.Bounds())
-	b, err := encodePNG(src)
+	b := src.Bounds()
+	pw, ph, cols, rows := fitSize(b.Dx(), b.Dy(), lay)
+	out, err := encodePNG(src, pw, ph, xdraw.CatmullRom)
+	log.Printf("image %s: format=%s bounds=%v scaled=%dx%d cells=%dx%d err=%v", key, format, b, pw, ph, cols, rows, err)
 	if err != nil {
-		log.Printf("image %s: encode: %v", key, err)
 		return imageMsg{ref: ref, err: err}
 	}
-	debugWrite(key+".png", b)
-	return imageMsg{ref: ref, pngs: [][]byte{b}, w: src.Bounds().Dx(), h: src.Bounds().Dy()}
+	debugWrite(key+".png", out)
+	return imageMsg{ref: ref, pngs: [][]byte{out}, cols: cols, rows: rows}
 }
 
 // decodeGIF composites each frame onto a canvas following the frame's
 // disposal method, because GIF frames are often partial updates.
-func decodeGIF(g *gif.GIF) imageMsg {
+func decodeGIF(g *gif.GIF, lay layout) imageMsg {
 	w, h := g.Config.Width, g.Config.Height
 	if w == 0 || h == 0 {
 		b := g.Image[0].Bounds()
 		w, h = b.Max.X, b.Max.Y
 	}
 	canvas := image.NewRGBA(image.Rect(0, 0, w, h))
+	pw, ph, cols, rows := fitSize(w, h, lay)
 	// ponytail: frames past maxGIFFrames are dropped, so very long GIFs loop early
-	msg := imageMsg{w: w, h: h}
+	msg := imageMsg{cols: cols, rows: rows}
 	for i, f := range g.Image[:min(len(g.Image), maxGIFFrames)] {
 		disposal := byte(gif.DisposalNone)
 		if i < len(g.Disposal) {
@@ -170,7 +196,8 @@ func decodeGIF(g *gif.GIF) imageMsg {
 			copy(prev.Pix, canvas.Pix)
 		}
 		draw.Draw(canvas, f.Bounds(), f, f.Bounds().Min, draw.Over)
-		b, err := encodePNG(canvas)
+		// Bilinear keeps scaling every frame fast.
+		b, err := encodePNG(canvas, pw, ph, xdraw.ApproxBiLinear)
 		if err != nil {
 			return imageMsg{err: err}
 		}
@@ -192,23 +219,50 @@ func decodeGIF(g *gif.GIF) imageMsg {
 	return msg
 }
 
-// encodePNG writes src as an RGBA PNG anchored at the origin, since GIF
-// frames decode to paletted images that may be offset.
-func encodePNG(src image.Image) ([]byte, error) {
-	// ponytail: full-resolution PNG goes over the pty, downscale first if large photos make rendering slow
-	b := src.Bounds()
-	rgba := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
-	draw.Draw(rgba, rgba.Bounds(), src, b.Min, draw.Src)
+// encodePNG scales src to a w×h RGBA PNG anchored at the origin. RGBA at
+// the origin also normalizes GIF frames, which decode to paletted images that
+// may be offset.
+func encodePNG(src image.Image, w, h int, scaler xdraw.Scaler) ([]byte, error) {
+	rgba := image.NewRGBA(image.Rect(0, 0, w, h))
+	if b := src.Bounds(); b.Dx() == w && b.Dy() == h {
+		draw.Draw(rgba, rgba.Bounds(), src, b.Min, draw.Src)
+	} else {
+		scaler.Scale(rgba, rgba.Bounds(), src, b, draw.Src, nil)
+	}
 	var buf bytes.Buffer
 	err := png.Encode(&buf, rgba)
 	return buf.Bytes(), err
 }
 
+// cellSize reads the terminal's cell size in pixels from the window size
+// ioctl, falling back to 8x16 when the terminal doesn't report pixels.
+func cellSize() (w, h int) {
+	ws, err := unix.IoctlGetWinsize(int(os.Stdout.Fd()), unix.TIOCGWINSZ)
+	if err != nil || ws.Xpixel == 0 || ws.Ypixel == 0 || ws.Col == 0 || ws.Row == 0 {
+		return 8, 16
+	}
+	return int(ws.Xpixel / ws.Col), int(ws.Ypixel / ws.Row)
+}
+
+// fitSize fits a w×h pixel image to lay, keeping its aspect ratio. The cells
+// allow up to 2x enlargement, which the terminal does when it draws. The
+// pixels only ever shrink, so sending an image never costs more than its
+// original size.
+func fitSize(w, h int, lay layout) (pw, ph, cols, rows int) {
+	scale := min(2, float64(lay.maxCols*lay.cellW)/float64(w), float64(lay.maxRows*lay.cellH)/float64(h))
+	cols = min(lay.maxCols, max(1, int(math.Ceil(float64(w)*scale/float64(lay.cellW)))))
+	rows = min(lay.maxRows, max(1, int(math.Ceil(float64(h)*scale/float64(lay.cellH)))))
+	px := min(1, scale)
+	pw = max(1, int(math.Round(float64(w)*px)))
+	ph = max(1, int(math.Round(float64(h)*px)))
+	return pw, ph, cols, rows
+}
+
 // add registers a downloaded image. It returns the escape sequence that
 // transmits the first frame, and for animations the command that starts them.
-func (im *images) add(msg imageMsg, width int) (string, tea.Cmd) {
+func (im *images) add(msg imageMsg) (string, tea.Cmd) {
 	i := im.byRef[msg.ref]
-	if i == nil || msg.err != nil || msg.w == 0 || msg.h == 0 || len(msg.pngs) == 0 {
+	if i == nil || msg.err != nil || len(msg.pngs) == 0 {
 		return "", nil
 	}
 	// IDs travel as 256-color foreground indexes, which survive color
@@ -220,13 +274,7 @@ func (im *images) add(msg imageMsg, width int) (string, tea.Cmd) {
 	}
 	im.byID[i.id] = i
 
-	// Assume cells are about 8px wide and twice as tall as wide.
-	i.cols = min(maxImageCols, max(1, width-6), max(1, msg.w/8))
-	i.rows = max(1, i.cols*msg.h/msg.w/2)
-	if i.rows > maxImageRows {
-		i.rows = maxImageRows
-		i.cols = max(1, i.rows*2*msg.w/msg.h)
-	}
+	i.cols, i.rows = msg.cols, msg.rows
 	i.ready = true
 	seq := kittyTransmit(i.id, i.cols, i.rows, msg.pngs[0])
 	key := debugKey(msg.ref)
@@ -276,6 +324,11 @@ func (im *images) render(ref string) string {
 	return kittyPlaceholder(i.id, i.cols, i.rows)
 }
 
+// kittyClear deletes every image ID mutter uses, along with their
+// placements. Ghostty keeps images per screen across programs, so without
+// this a placeholder can show a previous run's image under a reused ID.
+const kittyClear = "\x1b_Ga=d,d=R,x=1,y=255,q=2\x1b\\"
+
 func kittyTransmit(id, cols, rows int, data []byte) string {
 	enc := base64.StdEncoding.EncodeToString(data)
 	var b strings.Builder
@@ -301,10 +354,15 @@ func kittyTransmit(id, cols, rows int, data []byte) string {
 }
 
 // First entries of kitty's rowcolumn-diacritics.txt. Diacritic n encodes row
-// or column n.
+// or column n, so the table length caps image height in rows.
 var diacritics = []rune{
 	0x0305, 0x030D, 0x030E, 0x0310, 0x0312, 0x033D, 0x033E, 0x033F, 0x0346, 0x034A,
 	0x034B, 0x034C, 0x0350, 0x0351, 0x0352, 0x0357, 0x035B, 0x0363, 0x0364, 0x0365,
+	0x0366, 0x0367, 0x0368, 0x0369, 0x036A, 0x036B, 0x036C, 0x036D, 0x036E, 0x036F,
+	0x0483, 0x0484, 0x0485, 0x0486, 0x0487, 0x0592, 0x0593, 0x0594, 0x0595, 0x0597,
+	0x0598, 0x0599, 0x059C, 0x059D, 0x059E, 0x059F, 0x05A0, 0x05A1, 0x05A8, 0x05A9,
+	0x05AB, 0x05AC, 0x05AF, 0x05C4, 0x0610, 0x0611, 0x0612, 0x0613, 0x0614, 0x0615,
+	0x0616, 0x0617, 0x0657, 0x0658,
 }
 
 // kittyPlaceholder draws rows of U+10EEEE cells colored with the image ID.

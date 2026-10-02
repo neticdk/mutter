@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	xdraw "golang.org/x/image/draw"
+
 	"charm.land/lipgloss/v2"
 )
 
@@ -41,7 +43,7 @@ func TestEncodePNGFlattensPalettedFrame(t *testing.T) {
 	src := image.NewPaletted(image.Rect(5, 5, 9, 7), color.Palette{color.Transparent, color.White})
 	src.SetColorIndex(5, 5, 1)
 
-	b, err := encodePNG(src)
+	b, err := encodePNG(src, 4, 2, xdraw.NearestNeighbor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +77,7 @@ func TestDecodeGIFComposites(t *testing.T) {
 		Delay:    []int{0, 5},
 		Disposal: []byte{gif.DisposalNone, gif.DisposalNone},
 		Config:   image.Config{Width: 4, Height: 4},
-	})
+	}, layout{cellW: 1, cellH: 1, maxCols: 4, maxRows: 4})
 	if msg.err != nil || len(msg.pngs) != 2 {
 		t.Fatalf("got %d frames, err %v", len(msg.pngs), msg.err)
 	}
@@ -92,5 +94,37 @@ func TestDecodeGIFComposites(t *testing.T) {
 	}
 	if r, _, _, _ := second.At(3, 3).RGBA(); r == 0 {
 		t.Error("frame one lost at (3,3), frames are not composited")
+	}
+}
+
+func TestFitSize(t *testing.T) {
+	lay := layout{cellW: 16, cellH: 32, maxCols: 60, maxRows: 40}
+	tests := []struct {
+		name       string
+		w, h       int
+		lay        layout
+		cols, rows int
+	}{
+		// 480px square at 2x in 16x32 cells is 60x30, which fits.
+		{"square gif", 480, 480, lay, 60, 30},
+		// Limited by height: 20 rows of 32px is 640px, so 640px wide.
+		{"tall", 400, 800, layout{16, 32, 60, 20}, 20, 20},
+		// A 10:1 screenshot fills the width, 960x96px.
+		{"wide", 4000, 400, lay, 60, 3},
+		// Tiny images scale up at most 2x.
+		{"icon", 16, 16, lay, 2, 1},
+	}
+	// Pixels never grow, since the terminal enlarges into the cells.
+	if pw, ph, _, _ := fitSize(480, 480, lay); pw != 480 || ph != 480 {
+		t.Errorf("square gif sent at %dx%d px, want original 480x480", pw, ph)
+	}
+	if pw, _, _, _ := fitSize(4000, 400, lay); pw != 960 {
+		t.Errorf("wide screenshot sent %d px wide, want 960", pw)
+	}
+	for _, tt := range tests {
+		_, _, cols, rows := fitSize(tt.w, tt.h, tt.lay)
+		if cols != tt.cols || rows != tt.rows {
+			t.Errorf("%s: got %dx%d, want %dx%d", tt.name, cols, rows, tt.cols, tt.rows)
+		}
 	}
 }

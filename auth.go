@@ -11,12 +11,14 @@ import (
 	"net/http"
 	"os/exec"
 	"runtime"
+	"slices"
 	"sync"
 
 	"github.com/zalando/go-keyring"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/chat/v1"
+	"google.golang.org/api/pubsub/v1"
 )
 
 const keyringService = "mutter"
@@ -27,11 +29,13 @@ var scopes = []string{
 	chat.ChatSpacesReadonlyScope,
 	chat.ChatMessagesScope,
 	chat.ChatMembershipsReadonlyScope,
+	pubsub.PubsubScope,
 }
 
 type config struct {
 	ClientID     string `json:"client_id"`
 	ClientSecret string `json:"client_secret"`
+	Topic        string `json:"topic"` // projects/P/topics/T for live events
 }
 
 func (c config) oauth() *oauth2.Config {
@@ -80,23 +84,33 @@ func (s *savingSource) Token() (*oauth2.Token, error) {
 	return tok, nil
 }
 
+// storedToken records the scopes a token was granted with, so adding a scope
+// triggers a fresh login instead of permission errors.
+type storedToken struct {
+	Token  *oauth2.Token `json:"token"`
+	Scopes []string      `json:"scopes"`
+}
+
 func loadToken() (*oauth2.Token, error) {
 	s, err := keyring.Get(keyringService, "token")
 	if err != nil {
 		return nil, err
 	}
-	var tok oauth2.Token
-	if err := json.Unmarshal([]byte(s), &tok); err != nil {
+	var st storedToken
+	if err := json.Unmarshal([]byte(s), &st); err != nil {
 		return nil, err
 	}
-	if tok.RefreshToken == "" {
+	switch {
+	case st.Token == nil || st.Token.RefreshToken == "":
 		return nil, errors.New("stored token has no refresh token")
+	case !slices.Equal(st.Scopes, scopes):
+		return nil, errors.New("stored token has different scopes")
 	}
-	return &tok, nil
+	return st.Token, nil
 }
 
 func saveToken(tok *oauth2.Token) error {
-	b, err := json.Marshal(tok)
+	b, err := json.Marshal(storedToken{Token: tok, Scopes: scopes})
 	if err != nil {
 		return err
 	}

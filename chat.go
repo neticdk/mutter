@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -98,6 +99,23 @@ func (c *client) memberTitles(ctx context.Context, spaces []space) map[string]st
 	}
 	g.Wait()
 	return titles
+}
+
+// spaceTitle returns a space's current title, or "" when the space should be
+// hidden.
+func (c *client) spaceTitle(ctx context.Context, name string) (string, error) {
+	s, err := c.svc.Spaces.Get(name).Context(ctx).Do()
+	if err != nil {
+		return "", err
+	}
+	if s.DisplayName != "" {
+		return s.DisplayName, nil
+	}
+	t, ok := c.memberTitles(ctx, []space{{name: name}})[name]
+	if !ok {
+		return "", fmt.Errorf("no title for %s", name)
+	}
+	return t, nil
 }
 
 // otherMembers returns the names of the space's other human members and
