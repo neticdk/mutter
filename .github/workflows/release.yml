@@ -23,7 +23,7 @@ jobs:
       - id: tap-token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ vars.TAP_APP_ID }}
+          client-id: ${{ vars.TAP_APP_CLIENT_ID }}
           private-key: ${{ secrets.TAP_APP_PRIVATE_KEY }}
           owner: neticdk
           repositories: netic-homebrew-tap

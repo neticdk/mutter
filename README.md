@@ -85,7 +85,7 @@ Releases build in GitHub Actions when a `v*` tag is pushed, with GoReleaser (`.g
 | `MUTTER_TOPIC` | `projects/<PROJECT_ID>/topics/mutter-events` |
 | `TAP_APP_PRIVATE_KEY` | private key of a GitHub App installed on `neticdk/netic-homebrew-tap` with Contents and Pull requests write access |
 
-The App ID goes in the repository variable `TAP_APP_ID`. Each release mints a token from the app that lasts an hour and reaches only the tap.
+The app's Client ID goes in the repository variable `TAP_APP_CLIENT_ID`. Each release mints a token from the app that lasts an hour and reaches only the tap.
 
 ```
 git tag v0.1.0 && git push origin v0.1.0
