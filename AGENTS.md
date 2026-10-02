@@ -23,6 +23,8 @@ Everything is one `main` package, split into files by concern:
 | `image.go` | images and GIFs over the kitty graphics protocol |
 | `format.go` | Chat markup, cards, quotes, message bodies |
 
+`scripts/` holds `setup.sh`, the one-time GCP setup for admins, and `install.sh`, the install fallback for machines without Homebrew.
+
 Add a package only when a second consumer needs the code.
 
 ## Commands

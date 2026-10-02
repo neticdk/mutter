@@ -27,7 +27,7 @@ An admin does this once. Users then only log in.
 ### 1. Run the setup script
 
 ```
-./setup.sh PROJECT_ID USERS_GROUP_EMAIL
+./scripts/setup.sh PROJECT_ID USERS_GROUP_EMAIL
 ```
 
 The script does the following, and it is safe to re-run:
@@ -103,15 +103,15 @@ brew install neticdk/tap/mutter
 
 The tap needs its URL because its repository name doesn't start with `homebrew-`.
 
-Without Homebrew, `install.sh` downloads the release with `gh`:
+Without Homebrew, `scripts/install.sh` downloads the release with `gh`:
 
 ```
-gh api repos/neticdk/mutter/contents/install.sh -H 'Accept: application/vnd.github.raw' | bash
+gh api repos/neticdk/mutter/contents/scripts/install.sh -H 'Accept: application/vnd.github.raw' | bash
 ```
 
 [tap]: https://github.com/neticdk/netic-homebrew-tap
 
-`install.sh` downloads the archive for the machine, checks it against `checksums.txt`, and installs to `~/.local/bin`, or `$BINDIR` when set. Pass a tag to pin a version. The cask clears the macOS quarantine attribute after installing, and `gh` never sets it, so the unsigned binary runs without Gatekeeper prompts. A binary downloaded through a browser is blocked until it's signed and notarized.
+The script downloads the archive for the machine, checks it against `checksums.txt`, and installs to `~/.local/bin`, or `$BINDIR` when set. Pass a tag to pin a version. The cask clears the macOS quarantine attribute after installing, and `gh` never sets it, so the unsigned binary runs without Gatekeeper prompts. A binary downloaded through a browser is blocked until it's signed and notarized.
 
 ### Isolating users
 
