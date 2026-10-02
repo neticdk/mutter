@@ -1,0 +1,20 @@
+version: 2
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.clientID={{ .Env.MUTTER_CLIENT_ID }}
+      - -X main.clientSecret={{ .Env.MUTTER_CLIENT_SECRET }}
+      - -X main.topic={{ .Env.MUTTER_TOPIC }}
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt

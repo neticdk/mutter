@@ -17,7 +17,14 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
+// version is set by the release build.
+var version = "dev"
+
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "--version" {
+		fmt.Println("mutter", version)
+		return
+	}
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "mutter:", err)
 		os.Exit(1)

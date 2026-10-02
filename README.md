@@ -1,6 +1,17 @@
 # mutter
 
-Terminal client for Google Chat.
+Terminal client for Google Chat, for Workspace organizations.
+
+## Features
+
+- Spaces, DMs and group chats, with a fuzzy switcher that lists unread spaces first and shows web-client sidebar sections
+- Threads collapsed to their root, with reply counts, opened in their own view
+- Live updates through the Workspace Events API and Pub/Sub
+- Unread state synced with the web client, muted spaces respected
+- Desktop notifications following each space's notification setting
+- Reactions, edits, deletes, quotes and @mention completion
+- Cards rendered as text, images and animated GIFs drawn in the terminal
+- File upload, download and open
 
 ## Setup (once per organization)
 
@@ -27,6 +38,8 @@ The script does the following, and it is safe to re-run:
 - lets the group create Pub/Sub subscriptions (`roles/pubsub.editor` on the project)
 
 It finishes by printing direct links for the three console steps below.
+
+`roles/pubsub.editor` covers the whole project, which exposes event metadata between users. See [Isolating users](#isolating-users).
 
 ### 2. Configure the Chat app
 
@@ -61,9 +74,65 @@ Hand out the resulting `mutter` binary. Without `main.topic`, mutter runs withou
 
 On start, mutter subscribes the user to events from all their spaces through the Workspace Events API, delivered to the topic. Each machine pulls from its own filtered Pub/Sub subscription, which deletes itself after 31 days unused.
 
+### 6. Publish releases
+
+Releases build in GitHub Actions when a `v*` tag is pushed, with GoReleaser (`.goreleaser.yaml`, `.github/workflows/release.yml`). They cover macOS and Linux on amd64 and arm64, with the OAuth client and topic baked in from repository secrets:
+
+| Secret | Value |
+|---|---|
+| `MUTTER_CLIENT_ID` | the Desktop OAuth client ID |
+| `MUTTER_CLIENT_SECRET` | its client secret |
+| `MUTTER_TOPIC` | `projects/<PROJECT_ID>/topics/mutter-events` |
+
+```
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+The repository is private, so Homebrew can't download releases. Users install with `gh` instead, which needs read access to the repository:
+
+```
+gh api repos/neticdk/mutter/contents/install.sh -H 'Accept: application/vnd.github.raw' | bash
+```
+
+`install.sh` downloads the archive for the machine, checks it against `checksums.txt`, and installs to `~/.local/bin`, or `$BINDIR` when set. Pass a tag to pin a version. `gh` doesn't add the macOS quarantine attribute, so the unsigned binary runs without Gatekeeper prompts. A binary downloaded through a browser is blocked until it's signed and notarized.
+
+### Isolating users
+
+**Status: planned.** mutter currently uses one shared topic, as set up above.
+
+#### Exposure today
+
+- All users' events go to the shared `mutter-events` topic. Each client filters for its own events with a per-machine subscription.
+- A filter only limits what its own subscription receives. Anyone who can attach a subscription to the topic receives every event on it.
+- `roles/pubsub.editor` lets every group member attach one.
+- Events carry no message content, because mutter subscribes with `includeResource=false`. Reading a message still needs the reader's own Chat access.
+- What leaks is activity metadata: space and message IDs, timestamps, and read-state changes, meaning who reads which space and when.
+
+#### Recommended setup
+
+Per-user topics in the shared project, with resources an admin creates:
+
+| Resource | Per | Notes |
+|---|---|---|
+| Topic `mutter-<user>` | user | `chat-api-push@system.gserviceaccount.com` has Pub/Sub Publisher on it |
+| Subscription `mutter-<user>` | user | the user has `roles/pubsub.subscriber` on this subscription only |
+| Project-wide Pub/Sub role | nobody | users can't attach to topics they weren't given |
+
+- The setup script creates these for every member of the group, and is re-run when people join.
+- mutter derives the topic and subscription names from the user's email and stops creating subscriptions itself.
+- One subscription per user means two machines running mutter at once split the events between them. mutter should detect this and warn.
+
+#### Alternatives considered
+
+| Option | Isolation | Cost |
+|---|---|---|
+| Shared topic (current) | metadata visible within the group | none |
+| Topic per user in a shared project (recommended) | full | admin-created topics and subscriptions |
+| Project per user | full | each user needs a billing-enabled project they own, and runs setup themselves |
+
 ## Setup (per user)
 
-There is no setup with a baked-in build. The first run opens a browser for login, and the token is stored in the OS keychain.
+There is no setup with a baked-in build. The first run opens a browser for login, and the token is stored in the OS keychain. On Linux, the keychain is the Secret Service over D-Bus, such as GNOME Keyring or KeePassXC. Without one, mutter can't store the token.
 
 To use a different OAuth client, for example during development, write it to `~/Library/Application Support/mutter/config.json` (macOS) or `~/.config/mutter/config.json` (Linux). The file takes precedence over the baked-in client:
 
@@ -77,20 +146,68 @@ To use a different OAuth client, for example during development, write it to `~/
 ./mutter
 ```
 
+### Terminal support
+
+| Feature | Needs |
+|---|---|
+| Images and animated GIFs | kitty graphics protocol with Unicode placeholders, as in Ghostty and kitty. Other terminals show `[n · name]`. |
+| Desktop notifications | OSC 777, as in Ghostty |
+| shift+enter for newline | kitty keyboard protocol. alt+enter and ctrl+j work everywhere. |
+
+### Keys
+
 | Key | Action |
 |---|---|
-| enter | send |
-| shift+enter, alt+enter, ctrl+j | newline (shift+enter needs a terminal with kitty keyboard protocol, e.g. Ghostty) |
-| ctrl+k | switch space |
+| enter | send, or open the selected thread when the input is empty |
+| shift+enter, alt+enter, ctrl+j | newline |
+| ctrl+k | switch space. The filter matches names and sidebar sections. |
+| ↑ ↓ with an empty input | select a thread, or a message inside a thread |
+| ↑ on the oldest thread | load older history |
 | pgup, pgdown | scroll |
-| ↑, ↓ (empty input) | select a thread, or a message inside a thread |
-| `r` `e` `d` `q` `u` `o` `s` (while selecting) | react, edit, delete, quote, mark unread from here, open files, save files |
+| tab after `@name` | complete an @mention, so the person is notified |
 | esc | cancel editing or quoting, end selection, leave the thread |
+
+While a thread or message is selected, letter keys act on it. Any other key goes to the input.
+
+| Key | Action |
+|---|---|
+| `r` | react: `1`–`6` pick an emoji, picking it again removes it |
+| `e` | edit your own message |
+| `d` | delete your own message, confirmed with `y` |
+| `q` | quote it in your next message |
+| `u` | mark the space unread from this message onward |
+| `o` | open its files |
+| `s` | save its files to `~/Downloads` |
+
+### Commands
+
+| Command | Action |
+|---|---|
+| `/dm NAME` or `/dm EMAIL` | open or start a DM. Names match members of spaces opened this session. |
+| `/attach PATH [text]` | upload a file into the open thread, or as a new thread. Quote paths with spaces. |
 | `/open [n]` | open file `n` of the selected or open thread, the last one by default |
 | `/save [n]` | save file `n` to `~/Downloads` |
 | `/unread` | mark the space unread from the selected or open thread onward |
-| `/quit` | quit |
 | `/logout` | delete the stored token and quit |
+| `/quit` | quit |
+
+Saved files get the macOS quarantine attribute, so Gatekeeper checks them before they run. `/open` only follows http and https links.
+
+### Permissions
+
+The first run asks the user to grant these OAuth scopes. mutter asks again whenever the set changes.
+
+| Scope | Used for |
+|---|---|
+| `openid`, `email` | identifying the user |
+| `chat.spaces.readonly` | listing spaces |
+| `chat.spaces.create` | starting DMs with `/dm` |
+| `chat.messages` | reading, sending, editing and deleting messages, reactions, attachments |
+| `chat.memberships.readonly` | DM titles and @mention completion |
+| `chat.users.readstate` | unread state |
+| `chat.users.spacesettings` | notification and mute settings |
+| `chat.users.sections.readonly` | sidebar sections |
+| `pubsub` | pulling live events |
 
 ## Debugging
 
@@ -98,8 +215,10 @@ To use a different OAuth client, for example during development, write it to `~/
 MUTTER_DEBUG=/tmp/mutter-debug ./mutter
 ```
 
-This writes `mutter.log` to the directory, plus three files per image:
+This writes to the directory:
 
-- `<key>.orig`: the bytes as downloaded
-- `<key>.png`: the re-encoded PNG
-- `<key>.kitty`: the escape sequences sent to the terminal, followed by the placeholder cells. `cat` it to replay the image outside the TUI.
+- `mutter.log`: API errors, raw spaces, memberships and events, image decoding
+- `tty.out`: every byte sent to the terminal. It grows fast while GIFs animate, so keep runs short.
+- `<key>.orig`: each image as downloaded
+- `<key>.png`: each image as re-encoded
+- `<key>.kitty`: the escape sequences sent for each image, followed by its placeholder cells. `cat` it to replay the image outside the TUI.
