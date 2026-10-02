@@ -18,6 +18,15 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go test ./...
+      # A short-lived token from the release app, limited to the tap, which
+      # GITHUB_TOKEN can't reach.
+      - id: tap-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.TAP_APP_ID }}
+          private-key: ${{ secrets.TAP_APP_PRIVATE_KEY }}
+          owner: neticdk
+          repositories: homebrew-tap
       - uses: goreleaser/goreleaser-action@v7
         with:
           # renovate: datasource=github-releases depName=goreleaser/goreleaser
@@ -28,3 +37,4 @@ jobs:
           MUTTER_CLIENT_ID: ${{ secrets.MUTTER_CLIENT_ID }}
           MUTTER_CLIENT_SECRET: ${{ secrets.MUTTER_CLIENT_SECRET }}
           MUTTER_TOPIC: ${{ secrets.MUTTER_TOPIC }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ steps.tap-token.outputs.token }}

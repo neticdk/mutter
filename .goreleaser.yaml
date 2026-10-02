@@ -18,3 +18,24 @@ archives:
 
 checksum:
   name_template: checksums.txt
+
+# GoReleaser publishes casks, the replacement for its deprecated formulas.
+homebrew_casks:
+  - name: mutter
+    description: Terminal client for Google Chat
+    homepage: https://github.com/neticdk/mutter
+    repository:
+      owner: neticdk
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+      # The tap's main branch only accepts pull requests.
+      pull_request:
+        enabled: true
+    hooks:
+      post:
+        # The binary isn't signed, and Gatekeeper blocks quarantined
+        # unsigned binaries.
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/mutter"]
+          end
