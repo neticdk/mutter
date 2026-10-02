@@ -83,7 +83,7 @@ Releases build in GitHub Actions when a `v*` tag is pushed, with GoReleaser (`.g
 | `MUTTER_CLIENT_ID` | the Desktop OAuth client ID |
 | `MUTTER_CLIENT_SECRET` | its client secret |
 | `MUTTER_TOPIC` | `projects/<PROJECT_ID>/topics/mutter-events` |
-| `TAP_APP_PRIVATE_KEY` | private key of a GitHub App installed on `neticdk/homebrew-tap` with Contents and Pull requests write access |
+| `TAP_APP_PRIVATE_KEY` | private key of a GitHub App installed on `neticdk/netic-homebrew-tap` with Contents and Pull requests write access |
 
 The App ID goes in the repository variable `TAP_APP_ID`. Each release mints a token from the app that lasts an hour and reaches only the tap.
 
@@ -91,14 +91,17 @@ The App ID goes in the repository variable `TAP_APP_ID`. Each release mints a to
 git tag v0.1.0 && git push origin v0.1.0
 ```
 
-Each release opens a pull request on [`neticdk/homebrew-tap`][tap] that updates the `mutter` cask. Merging it publishes the release to Homebrew.
+Each release opens a pull request on [`neticdk/netic-homebrew-tap`][tap] that updates the `mutter` cask. Merging it publishes the release to Homebrew.
 
 Users install with Homebrew. The tap is internal to the organization, so git needs GitHub credentials, which `gh auth setup-git` provides:
 
 ```
 gh auth setup-git
+brew tap neticdk/tap https://github.com/neticdk/netic-homebrew-tap
 brew install neticdk/tap/mutter
 ```
+
+The tap needs its URL because its repository name doesn't start with `homebrew-`.
 
 Without Homebrew, `install.sh` downloads the release with `gh`:
 
@@ -106,7 +109,7 @@ Without Homebrew, `install.sh` downloads the release with `gh`:
 gh api repos/neticdk/mutter/contents/install.sh -H 'Accept: application/vnd.github.raw' | bash
 ```
 
-[tap]: https://github.com/neticdk/homebrew-tap
+[tap]: https://github.com/neticdk/netic-homebrew-tap
 
 `install.sh` downloads the archive for the machine, checks it against `checksums.txt`, and installs to `~/.local/bin`, or `$BINDIR` when set. Pass a tag to pin a version. The cask clears the macOS quarantine attribute after installing, and `gh` never sets it, so the unsigned binary runs without Gatekeeper prompts. A binary downloaded through a browser is blocked until it's signed and notarized.
 

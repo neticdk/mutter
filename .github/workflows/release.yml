@@ -26,7 +26,7 @@ jobs:
           app-id: ${{ vars.TAP_APP_ID }}
           private-key: ${{ secrets.TAP_APP_PRIVATE_KEY }}
           owner: neticdk
-          repositories: homebrew-tap
+          repositories: netic-homebrew-tap
       - uses: goreleaser/goreleaser-action@v7
         with:
           # renovate: datasource=github-releases depName=goreleaser/goreleaser
