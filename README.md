@@ -209,6 +209,21 @@ The first run asks the user to grant these OAuth scopes. mutter asks again whene
 | `chat.users.sections.readonly` | sidebar sections |
 | `pubsub` | pulling live events |
 
+## Development
+
+Needs Go, [just](https://github.com/casey/just), golangci-lint and gosec.
+
+| Recipe | Does |
+|---|---|
+| `just check` | format check, lint, gosec and tests, as CI runs them |
+| `just build` | build `./mutter`, baking in `MUTTER_CLIENT_ID`, `MUTTER_CLIENT_SECRET` and `MUTTER_TOPIC` when set |
+| `just run ARGS` | build and run |
+| `just fmt` | format with gofumpt and goimports |
+| `just fix` | modernize the code with `go fix` |
+| `just snapshot` | build all release targets into `dist/` |
+
+`just` alone lists every recipe.
+
 ## Debugging
 
 ```

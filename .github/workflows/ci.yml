@@ -1,0 +1,24 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: extractions/setup-just@v3
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          install-only: true
+      - run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+      - run: just check

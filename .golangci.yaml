@@ -1,0 +1,100 @@
+---
+version: "2"
+run:
+  # go test compiles the tests, the linters skip them.
+  tests: false
+linters:
+  default: none
+  enable:
+    - bodyclose # unclosed HTTP response bodies
+    - errcheck # unhandled errors
+    - goconst # repeated strings that should be constants
+    - gocritic # broader static analysis
+    - gosec # security problems
+    - govet # suspicious constructs
+    - ineffassign # ineffective assignments
+    - misspell # misspellings
+    - nilerr # returning nil while holding a non-nil error
+    - prealloc # slices that could be preallocated
+    - revive # style and correctness rules, configured below
+    - staticcheck # static analysis
+    - unconvert # unnecessary conversions
+    - unparam # unused parameters and results
+    - unused # unused code
+  settings:
+    errcheck:
+      check-type-assertions: true
+    gosec:
+      severity: medium
+      confidence: medium
+      config:
+        G301: "0750" # os.Mkdir, os.MkdirAll
+        G302: "0640" # os.OpenFile, os.Chmod
+        G306: "0640" # os.WriteFile
+    misspell:
+      locale: US
+    revive:
+      enable-all-rules: false
+      rules:
+        - name: argument-limit
+          arguments: [5]
+          severity: warning
+        - name: bool-literal-in-expr
+          severity: warning
+        - name: confusing-naming
+          severity: warning
+        - name: confusing-results
+        - name: constant-logical-expr
+          severity: warning
+        - name: datarace
+        - name: deep-exit
+          severity: warning
+        - name: defer
+          arguments:
+            - [immediate-recover, recover, return, loop]
+        - name: dot-imports
+          severity: warning
+        - name: duplicated-imports
+        - name: early-return
+          severity: warning
+        - name: errorf
+        - name: flag-parameter
+          severity: warning
+        - name: identical-branches
+        - name: if-return
+        - name: import-shadowing
+          severity: warning
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: nested-structs
+          severity: warning
+        - name: optimize-operands-order
+        - name: range
+        - name: redefines-builtin-id
+        - name: redundant-import-alias
+        - name: string-of-int
+        - name: struct-tag
+        - name: superfluous-else
+        - name: time-equal
+        - name: time-naming
+        - name: unchecked-type-assertion
+        - name: unconditional-recursion
+        - name: unnecessary-stmt
+        - name: unreachable-code
+        - name: unused-parameter
+        - name: use-any
+        - name: useless-break
+        - name: var-declaration
+  exclusions:
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+formatters:
+  enable:
+    - gofumpt
+    - goimports
