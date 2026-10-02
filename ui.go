@@ -41,9 +41,20 @@ type (
 		space   string
 		threads []*thread
 	}
-	sentMsg  *chat.Message
-	errMsg   error
-	eventMsg struct{ inner tea.Msg } // from runEvents
+	sentMsg   *chat.Message
+	errMsg    error
+	eventMsg  struct{ inner tea.Msg } // from runEvents
+	unreadMsg map[string]readInfo
+	noticeMsg string // informational status line text
+	// markedUnreadMsg reports that space now reads as last read at lastRead.
+	markedUnreadMsg struct{ space, lastRead string }
+	// notifyMsg reports a checked incoming message. muted carries the
+	// space's mute setting, which may not have been known yet.
+	notifyMsg struct {
+		space       string
+		muted, show bool
+		title, body string
+	}
 )
 
 type model struct {
@@ -63,6 +74,19 @@ type model struct {
 	events  <-chan tea.Msg
 	live    bool
 	liveErr error
+
+	focused  bool   // terminal has focus, so the open space counts as read
+	holdRead bool   // /unread was used, so don't mark the open space read
+	newBelow int    // threads that arrived below the cursor
+	notice   string // shown in place of the hints until the next key press
+
+	// Message actions. selecting means arrows picked a message, so letter
+	// keys act on it.
+	selecting bool
+	msgCursor int           // selected message in the thread view
+	mode      string        // "react" or "delete" while waiting for the next key
+	editing   *chat.Message // message whose text is in the input
+	quoting   *chat.Message // message the next send quotes
 
 	vp viewport.Model
 	ta textarea.Model
@@ -91,7 +115,7 @@ func newModel(ctx context.Context, c *client, events <-chan tea.Msg) model {
 	f := textinput.New()
 	f.Prompt = "switch to: "
 
-	return model{ctx: ctx, c: c, events: events, cur: -1, ta: ta, filter: f, vp: viewport.New(), imgs: newImages(), status: "loading spaces…"}
+	return model{ctx: ctx, c: c, events: events, focused: true, cur: -1, ta: ta, filter: f, vp: viewport.New(), imgs: newImages(), status: "loading spaces…"}
 }
 
 func (m model) Init() tea.Cmd {
@@ -137,19 +161,32 @@ func (m model) loadTitleChunk(untitled []space) tea.Cmd {
 	}
 }
 
-func (m model) loadMessages(space string) tea.Cmd {
+// loadMessages loads space and flags what's new since lastRead, fetching
+// the read state when lastRead is unknown. It marks the space read only
+// afterwards, so the flags reflect the state before opening.
+func (m model) loadMessages(space, lastRead string) tea.Cmd {
 	return func() tea.Msg {
+		if lastRead == "" {
+			var err error
+			if lastRead, err = m.c.readState(m.ctx, space); err != nil {
+				log.Printf("read state %s: %v", space, err)
+			}
+		}
 		threads, err := m.c.threads(m.ctx, space, historySize)
 		if err != nil {
 			return errMsg(err)
+		}
+		m.c.markNew(m.ctx, threads, lastRead)
+		if err := m.c.markRead(m.ctx, space); err != nil {
+			log.Printf("mark read %s: %v", space, err)
 		}
 		return messagesMsg{space, threads}
 	}
 }
 
-func (m model) sendCmd(space, thread, text string) tea.Cmd {
+func (m model) sendCmd(space, thread, text string, quote *chat.Message) tea.Cmd {
 	return func() tea.Msg {
-		msg, err := m.c.send(m.ctx, space, thread, text)
+		msg, err := m.c.send(m.ctx, space, thread, text, quote)
 		if err != nil {
 			return errMsg(err)
 		}
@@ -182,10 +219,70 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.spaces[i].hidden = ok && t == ""
 			m.spaces[i].title = cmp.Or(t, s.name)
 		}
+		spaces := slices.Clone(m.spaces)
+		cmds = append(cmds, func() tea.Msg { return unreadMsg(m.c.unread(m.ctx, spaces)) })
 		if len(m.spaces) > 0 {
 			cmds = append(cmds, m.open(0))
 		}
 		return m, tea.Batch(cmds...)
+
+	case unreadMsg:
+		for i, s := range m.spaces {
+			info, ok := msg[s.name]
+			if !ok || i == m.cur {
+				continue
+			}
+			m.spaces[i].unread = info.unread && !info.muted
+			m.spaces[i].muted = info.muted
+			m.spaces[i].lastRead = info.lastRead
+		}
+		if m.switching {
+			m.refilter(true)
+		}
+		return m, nil
+
+	case readStateMsg:
+		if i := m.spaceIndex(msg.space); i >= 0 && i != m.cur {
+			m.spaces[i].unread = !m.spaces[i].muted && isUnread(m.spaces[i].lastActive, msg.lastRead)
+			m.spaces[i].lastRead = msg.lastRead
+		}
+		return m, nil
+
+	case noticeMsg:
+		m.notice = string(msg)
+		return m, nil
+
+	case markedUnreadMsg:
+		if m.cur >= 0 && m.spaces[m.cur].name == msg.space {
+			for _, t := range m.threads {
+				t.unseen, t.readAt = 0, msg.lastRead
+				m.c.countNew(t, msg.lastRead)
+			}
+			m.notice = "marked unread from the selected thread"
+			m.render()
+		}
+		return m, nil
+
+	case notifyMsg:
+		if i := m.spaceIndex(msg.space); i >= 0 && msg.muted {
+			m.spaces[i].muted, m.spaces[i].unread = true, false
+		}
+		if !msg.show {
+			return m, nil
+		}
+		return m, tea.Raw(osc777(msg.title, msg.body))
+
+	case tea.FocusMsg:
+		m.focused = true
+		if m.cur >= 0 && m.spaces[m.cur].unread && !m.holdRead {
+			m.spaces[m.cur].unread = false
+			return m, m.markRead(m.spaces[m.cur].name)
+		}
+		return m, nil
+
+	case tea.BlurMsg:
+		m.focused = false
+		return m, nil
 
 	case titlesMsg:
 		for i, s := range m.spaces {
@@ -237,7 +334,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(tea.Raw(seq), next)
 
 	case sentMsg:
-		m.add(msg)
+		m.add(msg, false)
 		return m, nil
 
 	case eventMsg:
@@ -251,8 +348,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case messageEvent:
 		switch msg.kind {
 		case "created":
-			m.add(msg.msg)
-			return m, m.imgs.fetch(m.ctx, m.c, []*chat.Message{msg.msg})
+			return m, m.incoming(msg.msg)
 		case "updated":
 			m.replace(msg.msg)
 		case "deleted":
@@ -279,11 +375,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyPressMsg:
+		m.notice = ""
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
 		if m.switching {
 			return m.updateSwitcher(msg)
+		}
+		if m.mode != "" {
+			return m.updateMode(msg)
+		}
+		if m.selecting && m.ta.Value() == "" {
+			if cmd, ok := m.action(msg.String()); ok {
+				return m, cmd
+			}
+			if msg.Text != "" {
+				// Typing ends the selection and goes to the input.
+				m.selecting = false
+				m.render()
+			}
 		}
 		switch msg.String() {
 		case "ctrl+k":
@@ -297,9 +407,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.vp, cmd = m.vp.Update(msg)
 			return m, cmd
 		case "esc":
-			if m.inThread != nil {
+			switch {
+			case m.editing != nil || m.quoting != nil:
+				if m.editing != nil {
+					m.ta.Reset()
+				}
+				m.editing, m.quoting = nil, nil
+			case m.selecting:
+				m.selecting = false
+			case m.inThread != nil:
 				m.setThread(nil)
 			}
+			m.render()
 			return m, nil
 		case "enter":
 			if m.ta.Value() == "" && m.inThread == nil && len(m.threads) > 0 {
@@ -318,12 +437,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.String() == "up" {
 				step = -1
 			}
-			if m.inThread != nil && step < 0 {
-				m.vp.ScrollUp(1)
-			} else if m.inThread != nil {
-				m.vp.ScrollDown(1)
+			if t := m.inThread; t != nil {
+				// The first press selects the last message, where the view
+				// starts.
+				if m.selecting {
+					m.msgCursor = min(max(m.msgCursor+step, 0), len(t.msgs)-1)
+				}
+				m.selecting = true
+				m.render()
 			} else if len(m.threads) > 0 {
-				m.cursor = min(max(m.cursor+step, 0), len(m.threads)-1)
+				if m.selecting {
+					m.cursor = min(max(m.cursor+step, 0), len(m.threads)-1)
+				}
+				m.selecting = true
+				if m.cursor == len(m.threads)-1 {
+					m.newBelow = 0
+				}
 				m.render()
 			}
 			return m, nil
@@ -341,6 +470,16 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.ta.Reset()
+	fields := strings.Fields(text)
+	switch fields[0] {
+	case "/open", "/save":
+		return m, m.fileCmd(fields)
+	case "/unread":
+		if t := m.target(); t != nil {
+			return m, m.unreadFrom(t.msgs[0].CreateTime)
+		}
+		return m, nil
+	}
 	switch text {
 	case "/quit":
 		return m, tea.Quit
@@ -354,11 +493,25 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	if m.cur < 0 {
 		return m, nil
 	}
+	if e := m.editing; e != nil {
+		m.editing = nil
+		m.render()
+		return m, func() tea.Msg {
+			msg, err := m.c.edit(m.ctx, e.Name, text)
+			if err != nil {
+				return errMsg(err)
+			}
+			return sentMsg(msg)
+		}
+	}
 	thread := ""
 	if m.inThread != nil {
 		thread = m.inThread.name
 	}
-	return m, m.sendCmd(m.spaces[m.cur].name, thread, text)
+	quote := m.quoting
+	m.quoting = nil
+	m.render()
+	return m, m.sendCmd(m.spaces[m.cur].name, thread, text, quote)
 }
 
 func (m model) updateSwitcher(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -387,24 +540,32 @@ func (m model) updateSwitcher(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// refilter recomputes matches. With keep, the picked space stays selected
-// when it still matches, so background title updates don't move the
-// selection. Otherwise the top match is selected.
+// refilter recomputes matches, unread spaces first and then by recent
+// activity. With keep, the picked space stays selected when it still
+// matches, so background updates don't move the selection. Otherwise the
+// top match is selected.
 func (m *model) refilter(keep bool) {
 	picked := -1
 	if keep && m.pick < len(m.matches) {
 		picked = m.matches[m.pick]
 	}
 	m.matches = m.matches[:0]
-	m.pick = 0
 	for i, s := range m.spaces {
 		if !s.hidden && fuzzy(m.filter.Value(), s.title) {
-			if i == picked {
-				m.pick = len(m.matches)
-			}
 			m.matches = append(m.matches, i)
 		}
 	}
+	slices.SortStableFunc(m.matches, func(a, b int) int {
+		sa, sb := m.spaces[a], m.spaces[b]
+		if sa.unread != sb.unread {
+			if sa.unread {
+				return -1
+			}
+			return 1
+		}
+		return strings.Compare(sb.lastActive, sa.lastActive)
+	})
+	m.pick = max(0, slices.Index(m.matches, picked))
 }
 
 // fuzzy reports whether pattern is a case-insensitive subsequence of s.
@@ -423,13 +584,103 @@ func fuzzy(pattern, s string) bool {
 func (m *model) open(i int) tea.Cmd {
 	m.cur = i
 	m.threads = nil
+	m.newBelow = 0
+	m.spaces[i].unread = false
+	m.holdRead = false
+	lastRead := m.spaces[i].lastRead
+	m.spaces[i].lastRead = "" // stale once opened, so fetch it next time
 	m.setThread(nil)
 	m.status = "loading…"
-	return m.loadMessages(m.spaces[i].name)
+	return m.loadMessages(m.spaces[i].name, lastRead)
 }
 
+// target is the thread commands act on: the open one, or the selected one.
+func (m *model) target() *thread {
+	if m.inThread != nil {
+		return m.inThread
+	}
+	if m.cursor >= 0 && m.cursor < len(m.threads) {
+		return m.threads[m.cursor]
+	}
+	return nil
+}
+
+func (m model) markRead(space string) tea.Cmd {
+	return func() tea.Msg {
+		if err := m.c.markRead(m.ctx, space); err != nil {
+			log.Printf("mark read %s: %v", space, err)
+		}
+		return nil
+	}
+}
+
+func (m *model) spaceIndex(name string) int {
+	return slices.IndexFunc(m.spaces, func(s space) bool { return s.name == name })
+}
+
+// incoming handles a new message from the event feed. Messages from others
+// mark their space unread, unless it's open with the terminal focused, and
+// may raise a desktop notification.
+func (m *model) incoming(msg *chat.Message) tea.Cmd {
+	i := m.spaceIndex(spaceOf(msg.Name))
+	if i < 0 {
+		return nil
+	}
+	m.spaces[i].lastActive = msg.CreateTime
+	own := msg.Sender != nil && msg.Sender.Name == m.c.meID
+	m.add(msg, !own)
+	var cmds []tea.Cmd
+	if i == m.cur {
+		cmds = append(cmds, m.imgs.fetch(m.ctx, m.c, []*chat.Message{msg}))
+	}
+	if own {
+		return tea.Batch(cmds...)
+	}
+	seen := i == m.cur && m.focused && !m.holdRead
+	switch {
+	case seen:
+		cmds = append(cmds, m.markRead(m.spaces[i].name))
+	case m.spaces[i].muted:
+	default:
+		m.spaces[i].unread = true
+		if m.switching {
+			m.refilter(true)
+		}
+		s := m.spaces[i]
+		cmds = append(cmds, func() tea.Msg {
+			setting, err := m.c.setting(m.ctx, s.name)
+			if err != nil {
+				log.Printf("notification setting %s: %v", s.name, err)
+			}
+			sender := "someone"
+			if msg.Sender != nil {
+				sender = cmp.Or(msg.Sender.DisplayName, sender)
+			}
+			return notifyMsg{
+				space: s.name,
+				muted: setting != nil && setting.MuteSetting == "MUTED",
+				show:  shouldNotify(setting, s.dm, mentions(msg, m.c.meID), !msg.ThreadReply),
+				title: s.title,
+				body:  sender + ": " + cmp.Or(msg.Text, msg.FallbackText, "[attachment]"),
+			}
+		})
+	}
+	return tea.Batch(cmds...)
+}
+
+// setThread opens t, or returns to the space view when t is nil. Leaving a
+// thread counts it as read, so its new markers clear.
 func (m *model) setThread(t *thread) {
+	if old := m.inThread; old != nil && old != t {
+		old.readAt = time.Now().UTC().Format(time.RFC3339Nano)
+	}
 	m.inThread = t
+	m.selecting = false
+	if t != nil {
+		t.unseen = 0
+		t.rootNew = false
+		m.msgCursor = len(t.msgs) - 1
+	}
 	m.ta.Placeholder = "New thread"
 	if t != nil {
 		m.ta.Placeholder = "Reply"
@@ -438,8 +689,9 @@ func (m *model) setThread(t *thread) {
 }
 
 // add files msg under its thread. A new thread goes to the bottom, and the
-// cursor follows it only if it was already on the last thread.
-func (m *model) add(msg *chat.Message) {
+// cursor follows it only if it was already on the last thread. fromOthers
+// counts the message as new for the unseen markers.
+func (m *model) add(msg *chat.Message, fromOthers bool) {
 	if m.cur < 0 || !strings.HasPrefix(msg.Name, m.spaces[m.cur].name+"/") {
 		return
 	}
@@ -449,12 +701,19 @@ func (m *model) add(msg *chat.Message) {
 	}
 	name := threadName(msg)
 	if i := slices.IndexFunc(m.threads, func(t *thread) bool { return t.name == name }); i >= 0 {
-		m.threads[i].msgs = append(m.threads[i].msgs, msg)
+		t := m.threads[i]
+		t.msgs = append(t.msgs, msg)
+		if fromOthers && t != m.inThread {
+			t.unseen++
+		}
 	} else {
 		atBottom := m.cursor == len(m.threads)-1
-		m.threads = append(m.threads, &thread{name: name, msgs: []*chat.Message{msg}})
-		if atBottom {
+		m.threads = append(m.threads, &thread{name: name, msgs: []*chat.Message{msg}, rootNew: fromOthers})
+		switch {
+		case atBottom:
 			m.cursor = len(m.threads) - 1
+		case fromOthers:
+			m.newBelow++
 		}
 	}
 	m.render()
@@ -504,36 +763,58 @@ func (m *model) remove(name string) {
 
 func (m *model) render() {
 	m.imgs.hideAll()
-	if m.inThread != nil {
+	if t := m.inThread; t != nil {
 		var blocks []string
-		for _, msg := range m.inThread.msgs {
-			blocks = append(blocks, threadStyle.Render(m.message(msg)))
+		num := 0
+		for _, msg := range t.msgs {
+			blocks = append(blocks, m.message(msg, m.c.isNew(msg, t.readAt), &num))
 		}
-		m.vp.SetContent(strings.Join(blocks, "\n\n"))
-		m.vp.GotoBottom()
+		if !m.selecting {
+			m.setBlocks(blocks, -1)
+			m.vp.GotoBottom()
+			return
+		}
+		m.setBlocks(blocks, m.msgCursor)
 		return
 	}
 
 	var blocks []string
-	top, bottom := 0, 0
-	for i, t := range m.threads {
-		block := m.message(t.msgs[0])
+	for _, t := range m.threads {
+		num := 0
+		block := m.message(t.msgs[0], t.rootNew, &num)
 		if n := len(t.msgs) - 1; n > 0 {
-			block += "\n" + dimStyle.Render(fmt.Sprintf("%d %s · last %s", n, plural(n, "reply", "replies"), when(t.last())))
-		}
-		if i == m.cursor {
-			block = cursorStyle.Render(block)
-			top = lipgloss.Height(strings.Join(blocks, "\n\n"))
-			if len(blocks) > 0 {
-				top++ // the blank separator line
+			line := fmt.Sprintf("%d %s · last %s", n, plural(n, "reply", "replies"), when(t.last()))
+			if t.unseen > 0 {
+				block += "\n" + boldStyle.Render(fmt.Sprintf("%s · %d new", line, t.unseen))
+			} else {
+				block += "\n" + dimStyle.Render(line)
 			}
-			bottom = top + lipgloss.Height(block)
-		} else {
-			block = threadStyle.Render(block)
 		}
 		blocks = append(blocks, block)
 	}
+	m.setBlocks(blocks, m.cursor)
+}
+
+// setBlocks shows blocks with the one at sel highlighted and scrolled into
+// view. sel -1 highlights nothing.
+func (m *model) setBlocks(blocks []string, sel int) {
+	top, bottom := 0, 0
+	for i, b := range blocks {
+		if i != sel {
+			blocks[i] = threadStyle.Render(b)
+			continue
+		}
+		blocks[i] = cursorStyle.Render(b)
+		top = lipgloss.Height(strings.Join(blocks[:i], "\n\n"))
+		if i > 0 {
+			top++ // the blank separator line
+		}
+		bottom = top + lipgloss.Height(blocks[i])
+	}
 	m.vp.SetContent(strings.Join(blocks, "\n\n"))
+	if sel < 0 {
+		return
+	}
 	if top < m.vp.YOffset() {
 		m.vp.SetYOffset(top)
 	} else if bottom > m.vp.YOffset()+m.vp.Height() {
@@ -541,7 +822,8 @@ func (m *model) render() {
 	}
 }
 
-func (m *model) message(msg *chat.Message) string {
+// message renders msg, with a dot when it's new to the user.
+func (m *model) message(msg *chat.Message, isNew bool, num *int) string {
 	name := ""
 	if msg.Sender != nil {
 		name = msg.Sender.DisplayName
@@ -549,8 +831,12 @@ func (m *model) message(msg *chat.Message) string {
 			name = msg.Sender.Name
 		}
 	}
-	body := lipgloss.NewStyle().Width(max(1, m.width-4)).Render(messageBody(msg, m.imgs.render))
-	return senderStyle.Render(name) + " " + dimStyle.Render(when(msg.CreateTime)) + "\n" + body
+	body := lipgloss.NewStyle().Width(max(1, m.width-4)).Render(messageBody(msg, m.imgs.render, num))
+	head := senderStyle.Render(name) + " " + dimStyle.Render(when(msg.CreateTime))
+	if isNew {
+		head = liveStyle.Render("● ") + head
+	}
+	return head + "\n" + body
 }
 
 func plural(n int, one, many string) string {
@@ -582,16 +868,39 @@ func (m model) View() tea.View {
 	} else {
 		title += " " + dimStyle.Render("○ offline")
 	}
-	hint := "↑/↓ select · enter open thread · type to start a thread · ctrl+k switch · /quit"
+	unread := 0
+	for i, s := range m.spaces {
+		if s.unread && !s.hidden && i != m.cur {
+			unread++
+		}
+	}
+	if unread > 0 {
+		title += " " + boldStyle.Render(fmt.Sprintf("· %d unread %s", unread, plural(unread, "space", "spaces")))
+	}
+	hint := "↑/↓ select · enter open thread · type to start a thread · ctrl+k switch · /open /save /unread · /quit"
+	if m.newBelow > 0 {
+		hint = boldStyle.Render(fmt.Sprintf("↓ %d new", m.newBelow)) + dimStyle.Render(" · ") + dimStyle.Render(hint)
+	}
 	if m.inThread != nil {
 		title += " › thread"
-		hint = "enter reply · esc back · ↑/↓ scroll · ctrl+k switch · /quit"
+		hint = "enter reply · esc back · ↑/↓ scroll · ctrl+k switch · /open /save /unread · /quit"
 	}
 	body := m.vp.View()
 	if m.switching {
 		body = m.switcherView()
 	}
+	// A pending react or delete prompt beats notices, which beat the
+	// editing, quoting and selection hints.
 	status := m.status
+	if status == "" && m.mode != "" {
+		status = m.modeHint()
+	}
+	if status == "" {
+		status = m.notice
+	}
+	if status == "" {
+		status = m.modeHint()
+	}
 	if status == "" && m.liveErr != nil {
 		status = errStyle.Render("live updates: " + m.liveErr.Error())
 	}
@@ -605,6 +914,7 @@ func (m model) View() tea.View {
 		status,
 	))
 	v.AltScreen = true
+	v.ReportFocus = true
 	return v
 }
 
@@ -614,10 +924,14 @@ func (m model) switcherView() string {
 		if len(lines) >= m.vp.Height() {
 			break
 		}
+		title := m.spaces[i].title
+		if m.spaces[i].unread {
+			title = liveStyle.Render("● ") + boldStyle.Render(title)
+		}
 		if j == m.pick {
-			lines = append(lines, selStyle.Render("› "+m.spaces[i].title))
+			lines = append(lines, selStyle.Render("› ")+title)
 		} else {
-			lines = append(lines, "  "+m.spaces[i].title)
+			lines = append(lines, "  "+title)
 		}
 	}
 	for len(lines) < m.vp.Height() {

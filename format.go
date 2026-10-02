@@ -66,7 +66,9 @@ func formatInline(s string) string {
 
 // messageBody renders text, cards, attachments and GIFs. img renders the
 // image with the given ref, or returns "" to fall back to a text placeholder.
-func messageBody(m *chat.Message, img func(ref string) string) string {
+// num counts files across a thread, numbering them in filesOf order for
+// /open and /save.
+func messageBody(m *chat.Message, img func(ref string) string, num *int) string {
 	var parts []string
 	if q := m.QuotedMessageMetadata; q != nil && q.QuotedMessageSnapshot != nil {
 		parts = append(parts, quote(q))
@@ -83,18 +85,22 @@ func messageBody(m *chat.Message, img func(ref string) string) string {
 		parts = append(parts, m.FallbackText)
 	}
 	for _, a := range m.Attachment {
+		*num++
+		label := dimStyle.Render(fmt.Sprintf("[%d · %s]", *num, cmp.Or(a.ContentName, a.ContentType)))
 		if s := img(imageRef(a)); s != "" {
 			parts = append(parts, s)
-			continue
 		}
-		parts = append(parts, dimStyle.Render(fmt.Sprintf("[%s: %s]", a.ContentType, a.ContentName)))
+		parts = append(parts, label)
 	}
 	for _, g := range m.AttachedGifs {
+		*num++
 		if s := img(g.Uri); s != "" {
 			parts = append(parts, s)
-			continue
 		}
-		parts = append(parts, dimStyle.Render("[gif]"))
+		parts = append(parts, dimStyle.Render(fmt.Sprintf("[%d · gif]", *num)))
+	}
+	if r := reactions(m); r != "" {
+		parts = append(parts, r)
 	}
 	return strings.Join(parts, "\n")
 }

@@ -83,6 +83,12 @@ To use a different OAuth client, for example during development, write it to `~/
 | shift+enter, alt+enter, ctrl+j | newline (shift+enter needs a terminal with kitty keyboard protocol, e.g. Ghostty) |
 | ctrl+k | switch space |
 | pgup, pgdown | scroll |
+| ↑, ↓ (empty input) | select a thread, or a message inside a thread |
+| `r` `e` `d` `q` `u` `o` `s` (while selecting) | react, edit, delete, quote, mark unread from here, open files, save files |
+| esc | cancel editing or quoting, end selection, leave the thread |
+| `/open [n]` | open file `n` of the selected or open thread, the last one by default |
+| `/save [n]` | save file `n` to `~/Downloads` |
+| `/unread` | mark the space unread from the selected or open thread onward |
 | `/quit` | quit |
 | `/logout` | delete the stored token and quit |
 

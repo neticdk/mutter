@@ -20,8 +20,12 @@ import (
 )
 
 type client struct {
-	svc *chat.Service
-	me  string // email of the logged-in user
+	svc  *chat.Service
+	me   string // email of the logged-in user
+	meID string // users/{id}, the same ID Google accounts use
+
+	settingsMu sync.Mutex
+	settings   map[string]*chat.SpaceNotificationSetting // by space
 }
 
 type space struct {
@@ -29,6 +33,10 @@ type space struct {
 	title      string
 	lastActive string // RFC 3339, sorts lexically
 	hidden     bool   // DM or group chat whose other members are all deleted
+	dm         bool
+	unread     bool
+	muted      bool
+	lastRead   string // from the startup scan, consumed when the space opens
 }
 
 func newClient(ctx context.Context, ts oauth2.TokenSource) (*client, error) {
@@ -44,7 +52,8 @@ func newClient(ctx context.Context, ts oauth2.TokenSource) (*client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &client{svc: svc, me: info.Email}, nil
+	log.Printf("user: %s users/%s", info.Email, info.Id)
+	return &client{svc: svc, me: info.Email, meID: "users/" + info.Id, settings: map[string]*chat.SpaceNotificationSetting{}}, nil
 }
 
 // spaces lists the user's spaces, most recently active first.
@@ -53,7 +62,7 @@ func (c *client) spaces(ctx context.Context) ([]space, error) {
 	err := c.svc.Spaces.List().PageSize(1000).Pages(ctx, func(r *chat.ListSpacesResponse) error {
 		for _, s := range r.Spaces {
 			debugJSON("space", s)
-			out = append(out, space{name: s.Name, title: s.DisplayName, lastActive: s.LastActiveTime})
+			out = append(out, space{name: s.Name, title: s.DisplayName, lastActive: s.LastActiveTime, dm: s.SpaceType == "DIRECT_MESSAGE"})
 		}
 		return nil
 	})
@@ -159,8 +168,11 @@ func (c *client) appName(ctx context.Context, space string) string {
 }
 
 type thread struct {
-	name string
-	msgs []*chat.Message // oldest first, msgs[0] is the root
+	name    string
+	msgs    []*chat.Message // oldest first, msgs[0] is the root
+	unseen  int             // replies from others since the thread was last read
+	rootNew bool            // root from someone else, posted since the space was last read
+	readAt  string          // when the thread was last read, marks new messages in it
 }
 
 func (t *thread) last() string { return t.msgs[len(t.msgs)-1].CreateTime }
@@ -229,9 +241,16 @@ func threadName(m *chat.Message) string {
 	return m.Name
 }
 
-// send posts text to space, as a reply when thread is set.
-func (c *client) send(ctx context.Context, space, thread, text string) (*chat.Message, error) {
+// send posts text to space, as a reply when thread is set, quoting quote
+// when set.
+func (c *client) send(ctx context.Context, space, thread, text string, quote *chat.Message) (*chat.Message, error) {
 	msg := &chat.Message{Text: text}
+	if quote != nil {
+		msg.QuotedMessageMetadata = &chat.QuotedMessageMetadata{
+			Name:           quote.Name,
+			LastUpdateTime: cmp.Or(quote.LastUpdateTime, quote.CreateTime),
+		}
+	}
 	call := c.svc.Spaces.Messages.Create(space, msg)
 	if thread != "" {
 		msg.Thread = &chat.Thread{Name: thread}

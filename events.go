@@ -17,6 +17,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"golang.org/x/oauth2"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/chat/v1"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
@@ -33,7 +34,12 @@ var eventTypes = []string{
 	"google.workspace.chat.membership.v1.created",
 	"google.workspace.chat.membership.v1.deleted",
 	"google.workspace.chat.space.v1.updated",
+	"google.workspace.chat.reaction.v1.created",
+	"google.workspace.chat.reaction.v1.deleted",
 }
+
+// userEventTypes keeps unread state in step with other devices.
+var userEventTypes = []string{"google.workspace.chat.spaceReadState.v1.updated"}
 
 const (
 	eventTarget = "//chat.googleapis.com/spaces/-"
@@ -58,7 +64,9 @@ type (
 	// spaceChangedMsg reports a rename or membership change that can change
 	// the space's title.
 	spaceChangedMsg struct{ space string }
-	liveMsg         struct{ err error }
+	// readStateMsg reports that the user read space, possibly elsewhere.
+	readStateMsg struct{ space, lastRead string }
+	liveMsg      struct{ err error }
 )
 
 var errResubscribe = errors.New("workspace events subscription ended")
@@ -98,32 +106,59 @@ func runEvents(ctx context.Context, ts oauth2.TokenSource, c *client, topic stri
 }
 
 func (e *events) run(ctx context.Context) error {
-	wsName, err := e.ensureWorkspaceSub(ctx)
+	spaces, err := e.ensureWorkspaceSub(ctx, eventTarget, eventTypes)
 	if err != nil {
 		return fmt.Errorf("workspace events subscription: %w", err)
 	}
-	sub, err := e.ensurePubsubSub(ctx, wsName)
+	// Read state lives on the user, so it needs its own subscription.
+	user, err := e.ensureWorkspaceSub(ctx, "//cloudidentity.googleapis.com/"+e.c.meID, userEventTypes)
+	if err != nil {
+		return fmt.Errorf("read state subscription: %w", err)
+	}
+	// One Pub/Sub subscription each, because a filter matching both
+	// subscription names exceeds Pub/Sub's 256-character filter limit.
+	spacesSub, err := e.ensurePubsubSub(ctx, spaces, "")
 	if err != nil {
 		return fmt.Errorf("pub/sub subscription: %w", err)
 	}
-	log.Printf("events: live on %s via %s", wsName, sub)
+	userSub, err := e.ensurePubsubSub(ctx, user, "-readstate")
+	if err != nil {
+		return fmt.Errorf("pub/sub read state subscription: %w", err)
+	}
+	log.Printf("events: live on %s and %s via %s and %s", spaces, user, spacesSub, userSub)
 	e.out <- liveMsg{}
 
-	renewed := time.Now()
-	for {
-		if time.Since(renewed) > renewEvery {
-			if err := e.renew(ctx, wsName); err != nil {
-				return err
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error { return e.pull(gctx, spacesSub) })
+	g.Go(func() error { return e.pull(gctx, userSub) })
+	g.Go(func() error {
+		for {
+			select {
+			case <-gctx.Done():
+				return gctx.Err()
+			case <-time.After(renewEvery):
 			}
-			renewed = time.Now()
+			for _, n := range []string{spaces, user} {
+				if err := e.renew(gctx, n); err != nil {
+					return err
+				}
+			}
 		}
+	})
+	return g.Wait()
+}
+
+// pull handles events from sub until an error or a lifecycle event that
+// needs a new subscription.
+func (e *events) pull(ctx context.Context, sub string) error {
+	for {
 		r, err := e.ps.Projects.Subscriptions.Pull(sub, &pubsub.PullRequest{MaxMessages: 50}).Context(ctx).Do()
 		if err != nil {
 			return fmt.Errorf("pull: %w", err)
 		}
 		var acks []string
 		for _, rm := range r.ReceivedMessages {
-			herr := e.handle(ctx, wsName, rm.Message)
+			herr := e.handle(ctx, rm.Message)
 			if errors.Is(herr, errResubscribe) {
 				return herr
 			}
@@ -140,10 +175,10 @@ func (e *events) run(ctx context.Context) error {
 	}
 }
 
-// ensureWorkspaceSub reuses this user's subscription to all spaces on our
-// topic, or creates one. It returns the subscription name.
-func (e *events) ensureWorkspaceSub(ctx context.Context) (string, error) {
-	filter := fmt.Sprintf(`event_types:%q AND target_resource=%q`, eventTypes[0], eventTarget)
+// ensureWorkspaceSub reuses this user's subscription to target on our topic,
+// or creates one. It returns the subscription name.
+func (e *events) ensureWorkspaceSub(ctx context.Context, target string, types []string) (string, error) {
+	filter := fmt.Sprintf(`event_types:%q AND target_resource=%q`, types[0], target)
 	r, err := e.ws.Subscriptions.List().Filter(filter).Context(ctx).Do()
 	if err != nil {
 		return "", err
@@ -152,7 +187,7 @@ func (e *events) ensureWorkspaceSub(ctx context.Context) (string, error) {
 		if s.NotificationEndpoint == nil || s.NotificationEndpoint.PubsubTopic != e.topic {
 			continue
 		}
-		if s.State == "ACTIVE" && sameSet(s.EventTypes, eventTypes) {
+		if s.State == "ACTIVE" && sameSet(s.EventTypes, types) {
 			return s.Name, e.renew(ctx, s.Name)
 		}
 		log.Printf("events: replacing %s, state=%s types=%v", s.Name, s.State, s.EventTypes)
@@ -162,8 +197,8 @@ func (e *events) ensureWorkspaceSub(ctx context.Context) (string, error) {
 	}
 
 	op, err := e.ws.Subscriptions.Create(&workspaceevents.Subscription{
-		TargetResource:       eventTarget,
-		EventTypes:           eventTypes,
+		TargetResource:       target,
+		EventTypes:           types,
 		NotificationEndpoint: &workspaceevents.NotificationEndpoint{PubsubTopic: e.topic},
 		PayloadOptions:       &workspaceevents.PayloadOptions{IncludeResource: false},
 		Ttl:                  eventTTL,
@@ -200,14 +235,15 @@ func (e *events) renew(ctx context.Context, name string) error {
 	return nil
 }
 
-// ensurePubsubSub makes sure this machine has a Pub/Sub subscription that
-// filters the shared topic down to wsName's events. Each machine gets its own,
-// because machines sharing one would split the events between them.
-func (e *events) ensurePubsubSub(ctx context.Context, wsName string) (string, error) {
+// ensurePubsubSub makes sure this machine has a Pub/Sub subscription, named
+// with suffix, that filters the shared topic down to wsName's events. Each
+// machine gets its own, because machines sharing one would split the events
+// between them.
+func (e *events) ensurePubsubSub(ctx context.Context, wsName, suffix string) (string, error) {
 	project, _, _ := strings.Cut(strings.TrimPrefix(e.topic, "projects/"), "/")
 	host, _ := os.Hostname()
 	sum := sha256.Sum256([]byte(e.c.me + "\x00" + host))
-	name := fmt.Sprintf("projects/%s/subscriptions/mutter-%s", project, hex.EncodeToString(sum[:8]))
+	name := fmt.Sprintf("projects/%s/subscriptions/mutter-%s%s", project, hex.EncodeToString(sum[:8]), suffix)
 	// ponytail: anyone with pubsub.editor can attach an unfiltered subscription to the shared topic and see other users' event metadata. Message bodies stay protected. Per-user topics close this.
 	filter := fmt.Sprintf(`attributes.ce-source = "//workspaceevents.googleapis.com/%s"`, wsName)
 
@@ -250,13 +286,18 @@ type eventData struct {
 	Spaces []struct {
 		Space named `json:"space"`
 	} `json:"spaces"`
+	SpaceReadState *named `json:"spaceReadState"`
+	Reaction       *named `json:"reaction"`
+	Reactions      []struct {
+		Reaction named `json:"reaction"`
+	} `json:"reactions"`
 }
 
 type named struct {
 	Name string `json:"name"`
 }
 
-func (e *events) handle(ctx context.Context, wsName string, m *pubsub.PubsubMessage) error {
+func (e *events) handle(ctx context.Context, m *pubsub.PubsubMessage) error {
 	typ := m.Attributes["ce-type"]
 	data, err := base64.StdEncoding.DecodeString(m.Data)
 	if err != nil {
@@ -266,7 +307,8 @@ func (e *events) handle(ctx context.Context, wsName string, m *pubsub.PubsubMess
 
 	switch typ {
 	case "google.workspace.events.subscription.v1.expirationReminder":
-		return e.renew(ctx, wsName)
+		// ce-source is //workspaceevents.googleapis.com/subscriptions/ID.
+		return e.renew(ctx, strings.TrimPrefix(m.Attributes["ce-source"], "//workspaceevents.googleapis.com/"))
 	case "google.workspace.events.subscription.v1.expired",
 		"google.workspace.events.subscription.v1.suspended",
 		"google.workspace.events.subscription.v1.deleted":
@@ -303,6 +345,34 @@ func (e *events) handle(ctx context.Context, wsName string, m *pubsub.PubsubMess
 			}
 			e.out <- ev
 		}
+	case strings.Contains(typ, ".reaction.v1."):
+		// A reaction changes its message's summary, so refetch the message.
+		var names []string
+		if d.Reaction != nil {
+			names = append(names, d.Reaction.Name)
+		}
+		for _, x := range d.Reactions {
+			names = append(names, x.Reaction.Name)
+		}
+		for _, n := range names {
+			msgName, _, _ := strings.Cut(n, "/reactions/")
+			msg, err := e.c.svc.Spaces.Messages.Get(msgName).Context(ctx).Do()
+			if err != nil {
+				log.Printf("events: get %s: %v", msgName, err)
+				continue
+			}
+			e.out <- messageEvent{kind: "updated", name: msgName, msg: msg}
+		}
+	case strings.Contains(typ, ".spaceReadState.v1."):
+		if d.SpaceReadState == nil {
+			return nil
+		}
+		space := readStateSpace(d.SpaceReadState.Name)
+		lastRead, err := e.c.readState(ctx, space)
+		if err != nil {
+			return fmt.Errorf("read state %s: %w", space, err)
+		}
+		e.out <- readStateMsg{space, lastRead}
 	case strings.Contains(typ, ".membership.v1."), strings.Contains(typ, ".space.v1."):
 		var names []string
 		if d.Membership != nil {
@@ -338,6 +408,15 @@ func spaceOf(name string) string {
 		return name
 	}
 	return parts[0] + "/" + parts[1]
+}
+
+// readStateSpace returns spaces/S for users/U/spaces/S/spaceReadState.
+func readStateSpace(name string) string {
+	parts := strings.Split(name, "/")
+	if len(parts) < 4 {
+		return name
+	}
+	return parts[2] + "/" + parts[3]
 }
 
 func sameSet(a, b []string) bool {

@@ -29,6 +29,8 @@ var scopes = []string{
 	chat.ChatSpacesReadonlyScope,
 	chat.ChatMessagesScope,
 	chat.ChatMembershipsReadonlyScope,
+	chat.ChatUsersReadstateScope,
+	chat.ChatUsersSpacesettingsScope,
 	pubsub.PubsubScope,
 }
 
