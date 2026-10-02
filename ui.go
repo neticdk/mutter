@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -38,8 +39,10 @@ type (
 		rest   []space // still to look up
 	}
 	messagesMsg struct {
-		space   string
-		threads []*thread
+		space    string
+		threads  []*thread
+		next     string // page token for older history
+		lastRead string // read state before opening, for marking older pages
 	}
 	sentMsg   *chat.Message
 	errMsg    error
@@ -88,6 +91,13 @@ type model struct {
 	editing   *chat.Message // message whose text is in the input
 	quoting   *chat.Message // message the next send quotes
 
+	olderToken   string // page token for history before the oldest thread
+	openRead     string // the open space's read state before it opened
+	loadingOlder bool
+
+	members  map[string][]member // by space, for @mention completion
+	mentions map[string]string   // completed "@Name" in the draft to "<users/ID>"
+
 	vp viewport.Model
 	ta textarea.Model
 
@@ -115,7 +125,7 @@ func newModel(ctx context.Context, c *client, events <-chan tea.Msg) model {
 	f := textinput.New()
 	f.Prompt = "switch to: "
 
-	return model{ctx: ctx, c: c, events: events, focused: true, cur: -1, ta: ta, filter: f, vp: viewport.New(), imgs: newImages(), status: "loading spaces…"}
+	return model{ctx: ctx, c: c, events: events, focused: true, cur: -1, members: map[string][]member{}, mentions: map[string]string{}, ta: ta, filter: f, vp: viewport.New(), imgs: newImages(), status: "loading spaces…"}
 }
 
 func (m model) Init() tea.Cmd {
@@ -172,7 +182,7 @@ func (m model) loadMessages(space, lastRead string) tea.Cmd {
 				log.Printf("read state %s: %v", space, err)
 			}
 		}
-		threads, err := m.c.threads(m.ctx, space, historySize)
+		threads, next, err := m.c.threads(m.ctx, space, historySize, "")
 		if err != nil {
 			return errMsg(err)
 		}
@@ -180,13 +190,13 @@ func (m model) loadMessages(space, lastRead string) tea.Cmd {
 		if err := m.c.markRead(m.ctx, space); err != nil {
 			log.Printf("mark read %s: %v", space, err)
 		}
-		return messagesMsg{space, threads}
+		return messagesMsg{space, threads, next, lastRead}
 	}
 }
 
 func (m model) sendCmd(space, thread, text string, quote *chat.Message) tea.Cmd {
 	return func() tea.Msg {
-		msg, err := m.c.send(m.ctx, space, thread, text, quote)
+		msg, err := m.c.send(m.ctx, space, thread, text, quote, nil)
 		if err != nil {
 			return errMsg(err)
 		}
@@ -220,7 +230,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.spaces[i].title = cmp.Or(t, s.name)
 		}
 		spaces := slices.Clone(m.spaces)
-		cmds = append(cmds, func() tea.Msg { return unreadMsg(m.c.unread(m.ctx, spaces)) })
+		cmds = append(cmds, func() tea.Msg { return unreadMsg(m.c.unread(m.ctx, spaces)) }, m.loadSections)
 		if len(m.spaces) > 0 {
 			cmds = append(cmds, m.open(0))
 		}
@@ -246,6 +256,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.spaces[i].unread = !m.spaces[i].muted && isUnread(m.spaces[i].lastActive, msg.lastRead)
 			m.spaces[i].lastRead = msg.lastRead
 		}
+		return m, nil
+
+	case membersMsg:
+		m.members[msg.space] = msg.members
 		return m, nil
 
 	case noticeMsg:
@@ -308,6 +322,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.cur >= 0 && m.spaces[m.cur].name == msg.space {
 			m.threads = msg.threads
 			m.cursor = len(m.threads) - 1
+			m.olderToken, m.openRead = msg.next, msg.lastRead
 			m.status = ""
 			m.render()
 			var roots []*chat.Message
@@ -357,17 +372,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case spaceChangedMsg:
-		if !slices.ContainsFunc(m.spaces, func(s space) bool { return s.name == msg.space }) {
-			// ponytail: newly joined spaces show up on the next start, add them live when that matters
-			return m, nil
+		return m, m.fetchSpace(msg.space, false)
+
+	case spaceInfoMsg:
+		return m, m.applySpace(msg)
+
+	case olderMsg:
+		return m, m.addOlder(msg)
+
+	case sectionsMsg:
+		for i, s := range m.spaces {
+			m.spaces[i].section = msg[s.name]
 		}
-		return m, func() tea.Msg {
-			t, err := m.c.spaceTitle(m.ctx, msg.space)
-			if err != nil {
-				return errMsg(err)
-			}
-			return titlesMsg{titles: map[string]string{msg.space: t}}
-		}
+		return m, nil
 
 	case errMsg:
 		log.Printf("error: %v", msg)
@@ -406,6 +423,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			m.vp, cmd = m.vp.Update(msg)
 			return m, cmd
+		case "tab":
+			if m.complete() {
+				return m, nil
+			}
 		case "esc":
 			switch {
 			case m.editing != nil || m.quoting != nil:
@@ -446,6 +467,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selecting = true
 				m.render()
 			} else if len(m.threads) > 0 {
+				if m.selecting && step < 0 && m.cursor == 0 {
+					return m, m.loadOlder()
+				}
 				if m.selecting {
 					m.cursor = min(max(m.cursor+step, 0), len(m.threads)-1)
 				}
@@ -474,6 +498,10 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	switch fields[0] {
 	case "/open", "/save":
 		return m, m.fileCmd(fields)
+	case "/attach":
+		return m, m.attachCmd(text)
+	case "/dm":
+		return m, m.dmCmd(strings.TrimPrefix(text, "/dm"))
 	case "/unread":
 		if t := m.target(); t != nil {
 			return m, m.unreadFrom(t.msgs[0].CreateTime)
@@ -493,6 +521,8 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	if m.cur < 0 {
 		return m, nil
 	}
+	text = expandMentions(text, m.mentions)
+	clear(m.mentions)
 	if e := m.editing; e != nil {
 		m.editing = nil
 		m.render()
@@ -551,7 +581,7 @@ func (m *model) refilter(keep bool) {
 	}
 	m.matches = m.matches[:0]
 	for i, s := range m.spaces {
-		if !s.hidden && fuzzy(m.filter.Value(), s.title) {
+		if !s.hidden && fuzzy(m.filter.Value(), s.title+" "+s.section) {
 			m.matches = append(m.matches, i)
 		}
 	}
@@ -591,7 +621,42 @@ func (m *model) open(i int) tea.Cmd {
 	m.spaces[i].lastRead = "" // stale once opened, so fetch it next time
 	m.setThread(nil)
 	m.status = "loading…"
-	return m.loadMessages(m.spaces[i].name, lastRead)
+	cmds := []tea.Cmd{m.loadMessages(m.spaces[i].name, lastRead)}
+	if m.members[m.spaces[i].name] == nil {
+		cmds = append(cmds, m.loadMembers(m.spaces[i].name))
+	}
+	return tea.Batch(cmds...)
+}
+
+// attachCmd uploads the file from "/attach PATH [text]" and sends it into
+// the open thread, or as a new thread.
+func (m *model) attachCmd(cmd string) tea.Cmd {
+	if m.cur < 0 {
+		return nil
+	}
+	path, text, err := parseAttach(cmd)
+	if err != nil {
+		m.notice = err.Error()
+		return nil
+	}
+	space, thread := m.spaces[m.cur].name, ""
+	if m.inThread != nil {
+		thread = m.inThread.name
+	}
+	text = expandMentions(text, m.mentions)
+	clear(m.mentions)
+	m.notice = "uploading " + filepath.Base(path) + "…"
+	return func() tea.Msg {
+		ref, err := m.c.upload(m.ctx, space, path)
+		if err != nil {
+			return errMsg(err)
+		}
+		msg, err := m.c.send(m.ctx, space, thread, text, nil, ref)
+		if err != nil {
+			return errMsg(err)
+		}
+		return sentMsg(msg)
+	}
 }
 
 // target is the thread commands act on: the open one, or the selected one.
@@ -896,6 +961,19 @@ func (m model) View() tea.View {
 		status = m.modeHint()
 	}
 	if status == "" {
+		if s := m.suggestions(); len(s) > 0 {
+			var names []string
+			for i, x := range s {
+				n := "@" + x.name
+				if i == 0 {
+					n = boldStyle.Render(n)
+				}
+				names = append(names, n)
+			}
+			status = dimStyle.Render("tab → ") + strings.Join(names, dimStyle.Render(" · "))
+		}
+	}
+	if status == "" {
 		status = m.notice
 	}
 	if status == "" {
@@ -927,6 +1005,9 @@ func (m model) switcherView() string {
 		title := m.spaces[i].title
 		if m.spaces[i].unread {
 			title = liveStyle.Render("● ") + boldStyle.Render(title)
+		}
+		if sec := m.spaces[i].section; sec != "" {
+			title += dimStyle.Render(" · " + sec)
 		}
 		if j == m.pick {
 			lines = append(lines, selStyle.Render("› ")+title)

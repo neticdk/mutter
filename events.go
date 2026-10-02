@@ -430,3 +430,8 @@ func isNotFound(err error) bool {
 	var gerr *googleapi.Error
 	return errors.As(err, &gerr) && gerr.Code == http.StatusNotFound
 }
+
+func isForbidden(err error) bool {
+	var gerr *googleapi.Error
+	return errors.As(err, &gerr) && gerr.Code == http.StatusForbidden
+}

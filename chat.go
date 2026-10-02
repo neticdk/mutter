@@ -37,6 +37,7 @@ type space struct {
 	unread     bool
 	muted      bool
 	lastRead   string // from the startup scan, consumed when the space opens
+	section    string // custom sidebar section in the web client
 }
 
 func newClient(ctx context.Context, ts oauth2.TokenSource) (*client, error) {
@@ -110,21 +111,69 @@ func (c *client) memberTitles(ctx context.Context, spaces []space) map[string]st
 	return titles
 }
 
-// spaceTitle returns a space's current title, or "" when the space should be
-// hidden.
-func (c *client) spaceTitle(ctx context.Context, name string) (string, error) {
-	s, err := c.svc.Spaces.Get(name).Context(ctx).Do()
+// getSpace fetches one space with its title. gone reports that the user can
+// no longer see it, because they left or were removed.
+func (c *client) getSpace(ctx context.Context, name string) (s space, gone bool, err error) {
+	r, err := c.svc.Spaces.Get(name).Context(ctx).Do()
+	if isNotFound(err) || isForbidden(err) {
+		return space{}, true, nil
+	}
+	if err != nil {
+		return space{}, false, err
+	}
+	s = space{name: r.Name, title: r.DisplayName, lastActive: r.LastActiveTime, dm: r.SpaceType == "DIRECT_MESSAGE"}
+	if s.title == "" {
+		t, ok := c.memberTitles(ctx, []space{s})[name]
+		if !ok {
+			return space{}, false, fmt.Errorf("no title for %s", name)
+		}
+		s.title, s.hidden = t, t == ""
+	}
+	return s, false, nil
+}
+
+// dm finds the DM with user, users/{id} or users/{email}, creating it when
+// there's none yet.
+func (c *client) dm(ctx context.Context, user string) (string, error) {
+	s, err := c.svc.Spaces.FindDirectMessage().Name(user).Context(ctx).Do()
+	if err == nil {
+		return s.Name, nil
+	}
+	if !isNotFound(err) {
+		return "", err
+	}
+	s, err = c.svc.Spaces.Setup(&chat.SetUpSpaceRequest{
+		Space:       &chat.Space{SpaceType: "DIRECT_MESSAGE"},
+		Memberships: []*chat.Membership{{Member: &chat.User{Name: user, Type: "HUMAN"}}},
+	}).Context(ctx).Do()
 	if err != nil {
 		return "", err
 	}
-	if s.DisplayName != "" {
-		return s.DisplayName, nil
-	}
-	t, ok := c.memberTitles(ctx, []space{{name: name}})[name]
-	if !ok {
-		return "", fmt.Errorf("no title for %s", name)
-	}
-	return t, nil
+	return s.Name, nil
+}
+
+// sections maps spaces to the custom sidebar section they're filed under in
+// the web client.
+func (c *client) sections(ctx context.Context) (map[string]string, error) {
+	out := map[string]string{}
+	err := c.svc.Users.Sections.List("users/me").PageSize(100).Pages(ctx, func(r *chat.ListSectionsResponse) error {
+		for _, sec := range r.Sections {
+			if sec.Type != "CUSTOM_SECTION" {
+				continue
+			}
+			err := c.svc.Users.Sections.Items.List(sec.Name).PageSize(1000).Pages(ctx, func(r *chat.ListSectionItemsResponse) error {
+				for _, it := range r.SectionItems {
+					out[it.Space] = sec.DisplayName
+				}
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return out, err
 }
 
 // otherMembers returns the names of the space's other human members and
@@ -181,10 +230,10 @@ func (t *thread) last() string { return t.msgs[len(t.msgs)-1].CreateTime }
 // the root was posted with the newest last, as Chat orders them. A reply
 // whose root falls outside the window triggers a fetch of its whole thread,
 // so every thread starts at its root.
-func (c *client) threads(ctx context.Context, space string, n int64) ([]*thread, error) {
-	r, err := c.svc.Spaces.Messages.List(space).OrderBy("createTime desc").PageSize(n).Context(ctx).Do()
+func (c *client) threads(ctx context.Context, space string, n int64, pageToken string) ([]*thread, string, error) {
+	r, err := c.svc.Spaces.Messages.List(space).OrderBy("createTime desc").PageSize(n).PageToken(pageToken).Context(ctx).Do()
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	slices.Reverse(r.Messages)
 	out := groupThreads(r.Messages)
@@ -209,11 +258,11 @@ func (c *client) threads(ctx context.Context, space string, n int64) ([]*thread,
 		})
 	}
 	if err := g.Wait(); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	slices.SortStableFunc(out, func(a, b *thread) int { return strings.Compare(a.msgs[0].CreateTime, b.msgs[0].CreateTime) })
-	return out, nil
+	return out, r.NextPageToken, nil
 }
 
 // groupThreads groups msgs, oldest first, by thread in order of first
@@ -241,10 +290,13 @@ func threadName(m *chat.Message) string {
 	return m.Name
 }
 
-// send posts text to space, as a reply when thread is set, quoting quote
-// when set.
-func (c *client) send(ctx context.Context, space, thread, text string, quote *chat.Message) (*chat.Message, error) {
+// send posts text to space, as a reply when thread is set, quoting quote and
+// carrying att when set.
+func (c *client) send(ctx context.Context, space, thread, text string, quote *chat.Message, att *chat.AttachmentDataRef) (*chat.Message, error) {
 	msg := &chat.Message{Text: text}
+	if att != nil {
+		msg.Attachment = []*chat.Attachment{{AttachmentDataRef: att}}
+	}
 	if quote != nil {
 		msg.QuotedMessageMetadata = &chat.QuotedMessageMetadata{
 			Name:           quote.Name,
