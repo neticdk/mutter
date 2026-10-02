@@ -19,6 +19,8 @@ jobs:
       - uses: extractions/setup-just@v3
       - uses: golangci/golangci-lint-action@v8
         with:
+          # renovate: datasource=github-releases depName=golangci/golangci-lint
+          version: v2.14.0
           install-only: true
-      - run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+      # gosec and govulncheck are pinned as tools in go.mod.
       - run: just check

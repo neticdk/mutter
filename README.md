@@ -88,7 +88,7 @@ Releases build in GitHub Actions when a `v*` tag is pushed, with GoReleaser (`.g
 git tag v0.1.0 && git push origin v0.1.0
 ```
 
-The repository is private, so Homebrew can't download releases. Users install with `gh` instead, which needs read access to the repository:
+Users install with `gh`:
 
 ```
 gh api repos/neticdk/mutter/contents/install.sh -H 'Accept: application/vnd.github.raw' | bash
@@ -211,11 +211,12 @@ The first run asks the user to grant these OAuth scopes. mutter asks again whene
 
 ## Development
 
-Needs Go, [just](https://github.com/casey/just), golangci-lint and gosec.
+Needs Go, [just](https://github.com/casey/just) and golangci-lint. gosec and govulncheck run with `go tool`, pinned in `go.mod`. `AGENTS.md` describes the code layout and the rules for changing it.
 
 | Recipe | Does |
 |---|---|
-| `just check` | format check, lint, gosec and tests, as CI runs them |
+| `just check` | format check, lint, gosec, govulncheck and tests, as CI runs them |
+| `just cover` | print total test coverage and write `coverage.html` |
 | `just build` | build `./mutter`, baking in `MUTTER_CLIENT_ID`, `MUTTER_CLIENT_SECRET` and `MUTTER_TOPIC` when set |
 | `just run ARGS` | build and run |
 | `just fmt` | format with gofumpt and goimports |
@@ -234,3 +235,7 @@ This writes to the directory:
 
 - `mutter.log`: API errors, raw spaces, memberships and events, image decoding
 - `tty.out`: every byte sent to the terminal. It grows fast while GIFs animate, so keep runs short.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
