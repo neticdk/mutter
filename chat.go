@@ -19,6 +19,13 @@ import (
 	"google.golang.org/api/option"
 )
 
+// Chat API values compared in several places.
+const (
+	allUsers      = "users/all"
+	mutedSetting  = "MUTED"
+	directMessage = "DIRECT_MESSAGE"
+)
+
 type client struct {
 	svc  *chat.Service
 	me   string // email of the logged-in user
@@ -63,7 +70,7 @@ func (c *client) spaces(ctx context.Context) ([]space, error) {
 	err := c.svc.Spaces.List().PageSize(1000).Pages(ctx, func(r *chat.ListSpacesResponse) error {
 		for _, s := range r.Spaces {
 			debugJSON("space", s)
-			out = append(out, space{name: s.Name, title: s.DisplayName, lastActive: s.LastActiveTime, dm: s.SpaceType == "DIRECT_MESSAGE"})
+			out = append(out, space{name: s.Name, title: s.DisplayName, lastActive: s.LastActiveTime, dm: s.SpaceType == directMessage})
 		}
 		return nil
 	})
@@ -107,7 +114,7 @@ func (c *client) memberTitles(ctx context.Context, spaces []space) map[string]st
 			return nil
 		})
 	}
-	g.Wait()
+	_ = g.Wait() // the lookups log their own errors and return nil
 	return titles
 }
 
@@ -121,7 +128,7 @@ func (c *client) getSpace(ctx context.Context, name string) (s space, gone bool,
 	if err != nil {
 		return space{}, false, err
 	}
-	s = space{name: r.Name, title: r.DisplayName, lastActive: r.LastActiveTime, dm: r.SpaceType == "DIRECT_MESSAGE"}
+	s = space{name: r.Name, title: r.DisplayName, lastActive: r.LastActiveTime, dm: r.SpaceType == directMessage}
 	if s.title == "" {
 		t, ok := c.memberTitles(ctx, []space{s})[name]
 		if !ok {
@@ -143,7 +150,7 @@ func (c *client) dm(ctx context.Context, user string) (string, error) {
 		return "", err
 	}
 	s, err = c.svc.Spaces.Setup(&chat.SetUpSpaceRequest{
-		Space:       &chat.Space{SpaceType: "DIRECT_MESSAGE"},
+		Space:       &chat.Space{SpaceType: directMessage},
 		Memberships: []*chat.Membership{{Member: &chat.User{Name: user, Type: "HUMAN"}}},
 	}).Context(ctx).Do()
 	if err != nil {
@@ -290,12 +297,20 @@ func threadName(m *chat.Message) string {
 	return m.Name
 }
 
-// send posts text to space, as a reply when thread is set, quoting quote and
-// carrying att when set.
-func (c *client) send(ctx context.Context, space, thread, text string, quote *chat.Message, att *chat.AttachmentDataRef) (*chat.Message, error) {
-	msg := &chat.Message{Text: text}
-	if att != nil {
-		msg.Attachment = []*chat.Attachment{{AttachmentDataRef: att}}
+// outgoing is a message to send. thread, quote and att are optional.
+type outgoing struct {
+	thread string
+	text   string
+	quote  *chat.Message
+	att    *chat.AttachmentDataRef
+}
+
+// send posts out to space, as a reply when out.thread is set.
+func (c *client) send(ctx context.Context, space string, out outgoing) (*chat.Message, error) {
+	msg := &chat.Message{Text: out.text}
+	thread, quote := out.thread, out.quote
+	if out.att != nil {
+		msg.Attachment = []*chat.Attachment{{AttachmentDataRef: out.att}}
 	}
 	if quote != nil {
 		msg.QuotedMessageMetadata = &chat.QuotedMessageMetadata{
@@ -333,7 +348,7 @@ func loadTitleCache(user string) map[string]string {
 	if err != nil {
 		return empty
 	}
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(path) // #nosec G304 -- path is in the user's cache dir
 	if err != nil {
 		return empty
 	}

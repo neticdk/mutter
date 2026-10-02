@@ -24,12 +24,12 @@ func TestSafeName(t *testing.T) {
 func TestCreateUnique(t *testing.T) {
 	dir := t.TempDir()
 	for _, want := range []string{"a.txt", "a (2).txt", "a (3).txt"} {
-		f, err := createUnique(dir, "a.txt")
+		f, path, err := createUnique(dir, "a.txt")
 		if err != nil {
 			t.Fatal(err)
 		}
 		f.Close()
-		if got := filepath.Base(f.Name()); got != want {
+		if got := filepath.Base(path); got != want {
 			t.Errorf("got %s, want %s", got, want)
 		}
 	}

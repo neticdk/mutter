@@ -13,6 +13,12 @@ import (
 	"google.golang.org/api/chat/v1"
 )
 
+// Prompts that wait for the next key.
+const (
+	modeReact  = "react"
+	modeDelete = "delete"
+)
+
 // quickReactions are the emoji the react prompt offers on keys 1 to 6.
 var quickReactions = []string{"👍", "❤️", "😂", "🎉", "👀", "✅"}
 
@@ -76,13 +82,13 @@ func (m *model) action(k string) (cmd tea.Cmd, ok bool) {
 	}
 	switch k {
 	case "r":
-		m.mode = "react"
+		m.mode = modeReact
 	case "d":
 		if !m.own(sel) {
 			m.notice = "you can only delete your own messages"
 			return nil, true
 		}
-		m.mode = "delete"
+		m.mode = modeDelete
 	case "e":
 		if !m.own(sel) {
 			m.notice = "you can only edit your own messages"
@@ -102,7 +108,11 @@ func (m *model) action(k string) (cmd tea.Cmd, ok bool) {
 			m.notice = "no files in this message"
 			return nil, true
 		}
-		return m.filesCmd(files, k == "s"), true
+		op := m.openFile
+		if k == "s" {
+			op = m.saveToDownloads
+		}
+		return m.filesCmd(files, op), true
 	default:
 		return nil, false
 	}
@@ -117,7 +127,7 @@ func (m model) updateMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch mode {
-	case "react":
+	case modeReact:
 		var n int
 		if _, err := fmt.Sscanf(msg.String(), "%d", &n); err != nil || n < 1 || n > len(quickReactions) {
 			return m, nil
@@ -128,9 +138,9 @@ func (m model) updateMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			if err != nil {
 				return errMsg(err)
 			}
-			return messageEvent{kind: "updated", name: name, msg: updated}
+			return messageEvent{kind: kindUpdated, name: name, msg: updated}
 		}
-	case "delete":
+	case modeDelete:
 		if msg.String() != "y" {
 			return m, nil
 		}
@@ -139,7 +149,7 @@ func (m model) updateMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			if err := m.c.del(m.ctx, name); err != nil {
 				return errMsg(err)
 			}
-			return messageEvent{kind: "deleted", name: name}
+			return messageEvent{kind: kindDeleted, name: name}
 		}
 	}
 	return m, nil
@@ -164,17 +174,20 @@ func (m *model) fileCmd(fields []string) tea.Cmd {
 			return nil
 		}
 	}
-	return m.filesCmd(files[n-1:n], fields[0] == "/save")
+	op := m.openFile
+	if fields[0] == "/save" {
+		op = m.saveToDownloads
+	}
+	return m.filesCmd(files[n-1:n], op)
 }
 
-// filesCmd opens or saves files. Uploaded files download, Drive files and
-// GIFs open in the browser.
-func (m *model) filesCmd(files []file, save bool) tea.Cmd {
+// filesCmd runs op, openFile or saveToDownloads, on each of files.
+func (m *model) filesCmd(files []file, op func(file) (string, error)) tea.Cmd {
 	m.notice = "fetching…"
 	return func() tea.Msg {
-		var done []string
+		done := make([]string, 0, len(files))
 		for _, f := range files {
-			s, err := m.openOrSave(f, save)
+			s, err := op(f)
 			if err != nil {
 				return errMsg(err)
 			}
@@ -184,35 +197,53 @@ func (m *model) filesCmd(files []file, save bool) tea.Cmd {
 	}
 }
 
-func (m *model) openOrSave(f file, save bool) (string, error) {
+// openFile downloads an uploaded file to a temp directory and opens it, or
+// opens a Drive file or GIF in the browser.
+func (m *model) openFile(f file) (string, error) {
 	if f.media == "" {
-		// URLs come from other people's messages, and open hands custom
-		// schemes to local apps.
-		if u, err := url.Parse(f.url); err != nil || (u.Scheme != "https" && u.Scheme != "http") {
-			return "won't open " + f.label + ", its link isn't http(s)", nil
-		}
-		openBrowser(f.url)
-		if save {
-			return "opened " + f.label + " in the browser, Drive files and GIFs can't be saved from here", nil
+		if err := openURL(f); err != nil {
+			return "", err
 		}
 		return "opened " + f.label + " in the browser", nil
 	}
-	dir := downloadsDir()
-	if !save {
-		dir = filepath.Join(os.TempDir(), "mutter")
-		if err := os.MkdirAll(dir, 0o700); err != nil {
-			return "", err
-		}
+	dir := filepath.Join(os.TempDir(), "mutter")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
 	}
 	path, err := m.c.saveFile(m.ctx, f, dir)
 	if err != nil {
 		return "", err
 	}
-	if save {
-		return "saved " + path, nil
-	}
 	openBrowser(path)
 	return "opened " + path, nil
+}
+
+// saveToDownloads saves an uploaded file. Drive files and GIFs can't be
+// downloaded without a Drive scope, so they open in the browser instead.
+func (m *model) saveToDownloads(f file) (string, error) {
+	if f.media == "" {
+		if err := openURL(f); err != nil {
+			return "", err
+		}
+		return "opened " + f.label + " in the browser, Drive files and GIFs can't be saved from here", nil
+	}
+	path, err := m.c.saveFile(m.ctx, f, downloadsDir())
+	if err != nil {
+		return "", err
+	}
+	return "saved " + path, nil
+}
+
+// openURL opens f's link in the browser. Links come from other people's
+// messages, and open hands custom schemes to local apps, so only http(s)
+// passes.
+func openURL(f file) error {
+	u, err := url.Parse(f.url)
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") {
+		return fmt.Errorf("won't open %s, its link isn't http(s)", f.label)
+	}
+	openBrowser(f.url)
+	return nil
 }
 
 // unreadFrom marks the open space unread from at onward. It holds off
@@ -252,13 +283,13 @@ func reactions(msg *chat.Message) string {
 // modeHint is the status line for the current interaction, or "".
 func (m *model) modeHint() string {
 	switch {
-	case m.mode == "react":
-		var picks []string
+	case m.mode == modeReact:
+		picks := make([]string, 0, len(quickReactions))
 		for i, e := range quickReactions {
 			picks = append(picks, fmt.Sprintf("%d %s", i+1, e))
 		}
 		return "react: " + strings.Join(picks, "  ") + dimStyle.Render(" · again removes it · any other key cancels")
-	case m.mode == "delete":
+	case m.mode == modeDelete:
 		return boldStyle.Render("delete this message?") + dimStyle.Render(" y to confirm, any other key cancels")
 	case m.editing != nil:
 		return boldStyle.Render("editing") + dimStyle.Render(" · enter save · esc cancel")

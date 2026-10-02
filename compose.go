@@ -68,10 +68,10 @@ func mentionQuery(text string) (q string, at int, ok bool) {
 func suggest(members []member, q string) []member {
 	q = strings.ToLower(q)
 	var out []member
-	for _, m := range append(members, member{id: "users/all", name: "all"}) {
+	for _, m := range append(members, member{id: allUsers, name: "all"}) {
 		name := strings.ToLower(m.name)
 		match := strings.HasPrefix(name, q)
-		for _, w := range strings.Fields(name) {
+		for w := range strings.FieldsSeq(name) {
 			match = match || strings.HasPrefix(w, q)
 		}
 		if match {
@@ -164,7 +164,7 @@ func parseAttach(cmd string) (path, text string, err error) {
 // upload sends the file at path to space and returns the reference to
 // attach to a message.
 func (c *client) upload(ctx context.Context, space, path string) (*chat.AttachmentDataRef, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 -- the user picked this file to upload
 	if err != nil {
 		return nil, err
 	}

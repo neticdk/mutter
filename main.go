@@ -56,7 +56,8 @@ func run() error {
 	}
 	var opts []tea.ProgramOption
 	if debugDir != "" {
-		f, err := os.Create(filepath.Join(debugDir, "tty.out"))
+		// #nosec G304 -- MUTTER_DEBUG is set by the user running mutter
+		f, err := os.OpenFile(filepath.Join(debugDir, "tty.out"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 		if err != nil {
 			return err
 		}
@@ -78,7 +79,7 @@ func loadConfig() (config, error) {
 		return config{}, err
 	}
 	path := filepath.Join(dir, "mutter", "config.json")
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(path) // #nosec G304 -- path is in the user's config dir
 	if errors.Is(err, fs.ErrNotExist) && clientID != "" {
 		return config{ClientID: clientID, ClientSecret: clientSecret, Topic: topic}, nil
 	}

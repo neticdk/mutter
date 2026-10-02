@@ -53,11 +53,18 @@ const (
 	pubsubExpiry = "2678400s" // 31 days
 )
 
+// messageEvent kinds.
+const (
+	kindCreated = "created"
+	kindUpdated = "updated"
+	kindDeleted = "deleted"
+)
+
 // Messages sent into the Bubble Tea program.
 type (
 	// messageEvent carries a fetched message, or only its name when deleted.
 	messageEvent struct {
-		kind string // created, updated or deleted
+		kind string // kindCreated, kindUpdated or kindDeleted
 		name string
 		msg  *chat.Message
 	}
@@ -274,23 +281,24 @@ func (e *events) ensurePubsubSub(ctx context.Context, wsName, suffix string) (st
 // eventData covers the payload shapes without resource data, single and
 // batched.
 type eventData struct {
-	Message  *named `json:"message"`
-	Messages []struct {
-		Message named `json:"message"`
-	} `json:"messages"`
-	Membership  *named `json:"membership"`
-	Memberships []struct {
-		Membership named `json:"membership"`
-	} `json:"memberships"`
-	Space  *named `json:"space"`
-	Spaces []struct {
-		Space named `json:"space"`
-	} `json:"spaces"`
-	SpaceReadState *named `json:"spaceReadState"`
-	Reaction       *named `json:"reaction"`
-	Reactions      []struct {
-		Reaction named `json:"reaction"`
-	} `json:"reactions"`
+	Message        *named      `json:"message"`
+	Messages       []batchItem `json:"messages"`
+	Membership     *named      `json:"membership"`
+	Memberships    []batchItem `json:"memberships"`
+	Space          *named      `json:"space"`
+	Spaces         []batchItem `json:"spaces"`
+	SpaceReadState *named      `json:"spaceReadState"`
+	Reaction       *named      `json:"reaction"`
+	Reactions      []batchItem `json:"reactions"`
+}
+
+// batchItem is one entry of a batched event. Each batch fills only the
+// field that matches its event type.
+type batchItem struct {
+	Message    named `json:"message"`
+	Membership named `json:"membership"`
+	Space      named `json:"space"`
+	Reaction   named `json:"reaction"`
 }
 
 type named struct {
@@ -337,7 +345,7 @@ func (e *events) handle(ctx context.Context, m *pubsub.PubsubMessage) error {
 		kind := messageKind(typ)
 		for _, n := range names {
 			ev := messageEvent{kind: kind, name: n}
-			if kind != "deleted" {
+			if kind != kindDeleted {
 				if ev.msg, err = e.c.svc.Spaces.Messages.Get(n).Context(ctx).Do(); err != nil {
 					log.Printf("events: get %s: %v", n, err)
 					continue
@@ -361,7 +369,7 @@ func (e *events) handle(ctx context.Context, m *pubsub.PubsubMessage) error {
 				log.Printf("events: get %s: %v", msgName, err)
 				continue
 			}
-			e.out <- messageEvent{kind: "updated", name: msgName, msg: msg}
+			e.out <- messageEvent{kind: kindUpdated, name: msgName, msg: msg}
 		}
 	case strings.Contains(typ, ".spaceReadState.v1."):
 		if d.SpaceReadState == nil {

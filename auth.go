@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/zalando/go-keyring"
 	"golang.org/x/oauth2"
@@ -143,7 +144,7 @@ func login(ctx context.Context, cfg *oauth2.Config) (*oauth2.Token, error) {
 		err  error
 	}
 	ch := make(chan result, 1)
-	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := &http.Server{ReadHeaderTimeout: 10 * time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		switch {
 		case q.Get("state") != state:
@@ -157,7 +158,8 @@ func login(ctx context.Context, cfg *oauth2.Config) (*oauth2.Token, error) {
 			ch <- result{code: q.Get("code")}
 		}
 	})}
-	go srv.Serve(ln)
+	// Serve returns ErrServerClosed once the login finishes.
+	go func() { _ = srv.Serve(ln) }()
 	defer srv.Close()
 
 	url := c.AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.ApprovalForce, oauth2.S256ChallengeOption(verifier))
@@ -180,6 +182,8 @@ func openBrowser(url string) {
 	if runtime.GOOS == "darwin" {
 		cmd = "open"
 	}
+	// #nosec G204 -- the command is fixed. Callers pass our own login URL,
+	// an http(s) link checked by openURL, or a file mutter downloaded.
 	_ = exec.Command(cmd, url).Start()
 }
 

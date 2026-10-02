@@ -25,7 +25,7 @@ type file struct {
 }
 
 func filesOf(m *chat.Message) []file {
-	var out []file
+	out := make([]file, 0, len(m.Attachment)+len(m.AttachedGifs))
 	for _, a := range m.Attachment {
 		f := file{label: cmp.Or(a.ContentName, a.ContentType, "attachment")}
 		switch {
@@ -45,7 +45,7 @@ func filesOf(m *chat.Message) []file {
 }
 
 func threadFiles(t *thread) []file {
-	var out []file
+	out := make([]file, 0, len(t.msgs))
 	for _, m := range t.msgs {
 		out = append(out, filesOf(m)...)
 	}
@@ -79,20 +79,20 @@ func (c *client) saveFile(ctx context.Context, f file, dir string) (string, erro
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("download %s: %s", f.label, resp.Status)
 	}
-	out, err := createUnique(dir, safeName(f.label))
+	out, path, err := createUnique(dir, safeName(f.label))
 	if err != nil {
 		return "", err
 	}
 	if _, err := io.Copy(out, resp.Body); err != nil {
-		out.Close()
-		os.Remove(out.Name())
+		_ = out.Close()
+		_ = os.Remove(path) // a partial download is useless
 		return "", err
 	}
 	if err := out.Close(); err != nil {
 		return "", err
 	}
-	quarantine(out.Name())
-	return out.Name(), nil
+	quarantine(path)
+	return path, nil
 }
 
 // safeName keeps a sender-chosen name from escaping the target directory.
@@ -104,8 +104,15 @@ func safeName(name string) string {
 	return name
 }
 
-// createUnique creates dir/name, or "name (2).ext" and so on when it exists.
-func createUnique(dir, name string) (*os.File, error) {
+// createUnique creates dir/name, or "name (2).ext" and so on when it exists,
+// and returns the file and its path. Files open through an os.Root, so a
+// name can't reach outside dir even if safeName misses a trick.
+func createUnique(dir, name string) (*os.File, string, error) {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, "", err
+	}
+	defer root.Close()
 	ext := filepath.Ext(name)
 	base := strings.TrimSuffix(name, ext)
 	for i := 1; i < 1000; i++ {
@@ -113,12 +120,12 @@ func createUnique(dir, name string) (*os.File, error) {
 		if i > 1 {
 			n = fmt.Sprintf("%s (%d)%s", base, i, ext)
 		}
-		f, err := os.OpenFile(filepath.Join(dir, n), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		f, err := root.OpenFile(n, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 		if !errors.Is(err, os.ErrExist) {
-			return f, err
+			return f, filepath.Join(dir, n), err
 		}
 	}
-	return nil, fmt.Errorf("no free name for %s in %s", name, dir)
+	return nil, "", fmt.Errorf("no free name for %s in %s", name, dir)
 }
 
 // quarantine marks a downloaded file the way browsers do, so macOS

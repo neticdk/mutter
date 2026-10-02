@@ -87,7 +87,7 @@ type model struct {
 	// keys act on it.
 	selecting bool
 	msgCursor int           // selected message in the thread view
-	mode      string        // "react" or "delete" while waiting for the next key
+	mode      string        // modeReact or modeDelete while waiting for the next key
 	editing   *chat.Message // message whose text is in the input
 	quoting   *chat.Message // message the next send quotes
 
@@ -196,7 +196,7 @@ func (m model) loadMessages(space, lastRead string) tea.Cmd {
 
 func (m model) sendCmd(space, thread, text string, quote *chat.Message) tea.Cmd {
 	return func() tea.Msg {
-		msg, err := m.c.send(m.ctx, space, thread, text, quote, nil)
+		msg, err := m.c.send(m.ctx, space, outgoing{thread: thread, text: text, quote: quote})
 		if err != nil {
 			return errMsg(err)
 		}
@@ -247,7 +247,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.spaces[i].lastRead = info.lastRead
 		}
 		if m.switching {
-			m.refilter(true)
+			m.refilter()
 		}
 		return m, nil
 
@@ -314,7 +314,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			log.Printf("title cache: %v", err)
 		}
 		if m.switching {
-			m.refilter(true)
+			m.refilter()
 		}
 		return m, m.loadTitleChunk(msg.rest)
 
@@ -349,7 +349,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(tea.Raw(seq), next)
 
 	case sentMsg:
-		m.add(msg, false)
+		m.add(msg)
 		return m, nil
 
 	case eventMsg:
@@ -362,11 +362,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case messageEvent:
 		switch msg.kind {
-		case "created":
+		case kindCreated:
 			return m, m.incoming(msg.msg)
-		case "updated":
+		case kindUpdated:
 			m.replace(msg.msg)
-		case "deleted":
+		case kindDeleted:
 			m.remove(msg.name)
 		}
 		return m, nil
@@ -416,7 +416,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+k":
 			m.switching = true
 			m.filter.SetValue("")
-			m.refilter(false)
+			m.resetFilter()
 			m.ta.Blur()
 			return m, m.filter.Focus()
 		case "pgup", "pgdown":
@@ -566,17 +566,16 @@ func (m model) updateSwitcher(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	m.filter, cmd = m.filter.Update(msg)
-	m.refilter(false)
+	m.resetFilter()
 	return m, cmd
 }
 
 // refilter recomputes matches, unread spaces first and then by recent
-// activity. With keep, the picked space stays selected when it still
-// matches, so background updates don't move the selection. Otherwise the
-// top match is selected.
-func (m *model) refilter(keep bool) {
+// activity. The picked space stays selected when it still matches, so
+// background updates don't move the selection.
+func (m *model) refilter() {
 	picked := -1
-	if keep && m.pick < len(m.matches) {
+	if m.pick < len(m.matches) {
 		picked = m.matches[m.pick]
 	}
 	m.matches = m.matches[:0]
@@ -651,7 +650,7 @@ func (m *model) attachCmd(cmd string) tea.Cmd {
 		if err != nil {
 			return errMsg(err)
 		}
-		msg, err := m.c.send(m.ctx, space, thread, text, nil, ref)
+		msg, err := m.c.send(m.ctx, space, outgoing{thread: thread, text: text, att: ref})
 		if err != nil {
 			return errMsg(err)
 		}
@@ -693,7 +692,7 @@ func (m *model) incoming(msg *chat.Message) tea.Cmd {
 	}
 	m.spaces[i].lastActive = msg.CreateTime
 	own := msg.Sender != nil && msg.Sender.Name == m.c.meID
-	m.add(msg, !own)
+	m.add(msg)
 	var cmds []tea.Cmd
 	if i == m.cur {
 		cmds = append(cmds, m.imgs.fetch(m.ctx, m.c, []*chat.Message{msg}))
@@ -709,7 +708,7 @@ func (m *model) incoming(msg *chat.Message) tea.Cmd {
 	default:
 		m.spaces[i].unread = true
 		if m.switching {
-			m.refilter(true)
+			m.refilter()
 		}
 		s := m.spaces[i]
 		cmds = append(cmds, func() tea.Msg {
@@ -723,7 +722,7 @@ func (m *model) incoming(msg *chat.Message) tea.Cmd {
 			}
 			return notifyMsg{
 				space: s.name,
-				muted: setting != nil && setting.MuteSetting == "MUTED",
+				muted: setting != nil && setting.MuteSetting == mutedSetting,
 				show:  shouldNotify(setting, s.dm, mentions(msg, m.c.meID), !msg.ThreadReply),
 				title: s.title,
 				body:  sender + ": " + cmp.Or(msg.Text, msg.FallbackText, "[attachment]"),
@@ -735,6 +734,13 @@ func (m *model) incoming(msg *chat.Message) tea.Cmd {
 
 // setThread opens t, or returns to the space view when t is nil. Leaving a
 // thread counts it as read, so its new markers clear.
+// resetFilter recomputes matches with the top one selected, for a new
+// filter.
+func (m *model) resetFilter() {
+	m.matches = m.matches[:0]
+	m.refilter()
+}
+
 func (m *model) setThread(t *thread) {
 	if old := m.inThread; old != nil && old != t {
 		old.readAt = time.Now().UTC().Format(time.RFC3339Nano)
@@ -754,9 +760,10 @@ func (m *model) setThread(t *thread) {
 }
 
 // add files msg under its thread. A new thread goes to the bottom, and the
-// cursor follows it only if it was already on the last thread. fromOthers
-// counts the message as new for the unseen markers.
-func (m *model) add(msg *chat.Message, fromOthers bool) {
+// cursor follows it only if it was already on the last thread. Messages from
+// others count as new for the unseen markers.
+func (m *model) add(msg *chat.Message) {
+	fromOthers := !m.own(msg)
 	if m.cur < 0 || !strings.HasPrefix(msg.Name, m.spaces[m.cur].name+"/") {
 		return
 	}
@@ -829,10 +836,14 @@ func (m *model) remove(name string) {
 func (m *model) render() {
 	m.imgs.hideAll()
 	if t := m.inThread; t != nil {
-		var blocks []string
+		blocks := make([]string, 0, len(t.msgs))
 		num := 0
 		for _, msg := range t.msgs {
-			blocks = append(blocks, m.message(msg, m.c.isNew(msg, t.readAt), &num))
+			block := m.message(msg, &num)
+			if m.c.isNew(msg, t.readAt) {
+				block = newDot() + block
+			}
+			blocks = append(blocks, block)
 		}
 		if !m.selecting {
 			m.setBlocks(blocks, -1)
@@ -846,7 +857,10 @@ func (m *model) render() {
 	var blocks []string
 	for _, t := range m.threads {
 		num := 0
-		block := m.message(t.msgs[0], t.rootNew, &num)
+		block := m.message(t.msgs[0], &num)
+		if t.rootNew {
+			block = newDot() + block
+		}
 		if n := len(t.msgs) - 1; n > 0 {
 			line := fmt.Sprintf("%d %s · last %s", n, plural(n, "reply", "replies"), when(t.last()))
 			if t.unseen > 0 {
@@ -887,8 +901,11 @@ func (m *model) setBlocks(blocks []string, sel int) {
 	}
 }
 
-// message renders msg, with a dot when it's new to the user.
-func (m *model) message(msg *chat.Message, isNew bool, num *int) string {
+// newDot marks a message that's new to the user.
+func newDot() string { return liveStyle.Render("● ") }
+
+// message renders msg's sender, time and body.
+func (m *model) message(msg *chat.Message, num *int) string {
 	name := ""
 	if msg.Sender != nil {
 		name = msg.Sender.DisplayName
@@ -897,11 +914,7 @@ func (m *model) message(msg *chat.Message, isNew bool, num *int) string {
 		}
 	}
 	body := lipgloss.NewStyle().Width(max(1, m.width-4)).Render(messageBody(msg, m.imgs.render, num))
-	head := senderStyle.Render(name) + " " + dimStyle.Render(when(msg.CreateTime))
-	if isNew {
-		head = liveStyle.Render("● ") + head
-	}
-	return head + "\n" + body
+	return senderStyle.Render(name) + " " + dimStyle.Render(when(msg.CreateTime)) + "\n" + body
 }
 
 func plural(n int, one, many string) string {
@@ -962,7 +975,7 @@ func (m model) View() tea.View {
 	}
 	if status == "" {
 		if s := m.suggestions(); len(s) > 0 {
-			var names []string
+			names := make([]string, 0, len(s))
 			for i, x := range s {
 				n := "@" + x.name
 				if i == 0 {

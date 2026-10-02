@@ -45,7 +45,7 @@ func (c *client) unread(ctx context.Context, spaces []space) map[string]readInfo
 			info := readInfo{unread: isUnread(s.lastActive, rs.LastReadTime), lastRead: rs.LastReadTime}
 			if info.unread {
 				if set, err := c.setting(ctx, s.name); err == nil {
-					info.muted = set.MuteSetting == "MUTED"
+					info.muted = set.MuteSetting == mutedSetting
 				}
 			}
 			mu.Lock()
@@ -54,7 +54,7 @@ func (c *client) unread(ctx context.Context, spaces []space) map[string]readInfo
 			return nil
 		})
 	}
-	g.Wait()
+	_ = g.Wait() // the lookups log their own errors and return nil
 	return out
 }
 
@@ -107,7 +107,7 @@ func (c *client) markNew(ctx context.Context, threads []*thread, spaceRead strin
 			return nil
 		})
 	}
-	g.Wait()
+	_ = g.Wait() // the lookups log their own errors and return nil
 }
 
 func (c *client) countNew(t *thread, spaceRead string) {
@@ -150,7 +150,7 @@ func (c *client) setting(ctx context.Context, space string) (*chat.SpaceNotifica
 // mentions reports whether msg @mentions the user, directly or as @all.
 func mentions(msg *chat.Message, meID string) bool {
 	for _, a := range msg.Annotations {
-		if u := a.UserMention; u != nil && u.User != nil && (u.User.Name == meID || u.User.Name == "users/all") {
+		if u := a.UserMention; u != nil && u.User != nil && (u.User.Name == meID || u.User.Name == allUsers) {
 			return true
 		}
 	}
@@ -160,7 +160,7 @@ func mentions(msg *chat.Message, meID string) bool {
 // shouldNotify mirrors the Chat notification levels. FOR_YOU also covers
 // followed threads, which the API doesn't expose, so only mentions count.
 func shouldNotify(s *chat.SpaceNotificationSetting, dm, mentioned, newThread bool) bool {
-	if s != nil && s.MuteSetting == "MUTED" {
+	if s != nil && s.MuteSetting == mutedSetting {
 		return false
 	}
 	level := ""

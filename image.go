@@ -73,6 +73,7 @@ type animMsg struct{ ref string }
 
 func newImages() *images {
 	enabled := os.Getenv("TERM_PROGRAM") == "ghostty" || os.Getenv("TERM") == "xterm-kitty" || os.Getenv("KITTY_WINDOW_ID") != ""
+	// #nosec G706 -- %q escapes the values, and they're the user's own environment
 	log.Printf("images: enabled=%v TERM=%q TERM_PROGRAM=%q TERM_PROGRAM_VERSION=%q", enabled, os.Getenv("TERM"), os.Getenv("TERM_PROGRAM"), os.Getenv("TERM_PROGRAM_VERSION"))
 	return &images{enabled: enabled, layout: layout{8, 16, maxImageCols, 20}, byRef: map[string]*img{}, byID: map[int]*img{}}
 }

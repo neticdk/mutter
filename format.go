@@ -164,7 +164,7 @@ func widgetLines(w *chat.GoogleAppsCardV1Widget) []string {
 		}
 	}
 	if b := w.ButtonList; b != nil {
-		var buttons []string
+		buttons := make([]string, 0, len(b.Buttons))
 		for _, btn := range b.Buttons {
 			label := "[ " + btn.Text + " ]"
 			if btn.OnClick != nil && btn.OnClick.OpenLink != nil {

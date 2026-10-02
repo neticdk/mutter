@@ -110,7 +110,7 @@ func (m *model) applySpace(msg spaceInfoMsg) tea.Cmd {
 		}
 	}
 	if m.switching {
-		m.refilter(true)
+		m.refilter()
 	}
 	if msg.open {
 		return m.open(i)
@@ -140,7 +140,7 @@ func (m *model) dmCmd(who string) tea.Cmd {
 				}
 			}
 		}
-		matches := slices.DeleteFunc(suggest(all, who), func(x member) bool { return x.id == "users/all" })
+		matches := slices.DeleteFunc(suggest(all, who), func(x member) bool { return x.id == allUsers })
 		switch len(matches) {
 		case 0:
 			m.notice = "no one called " + who + " in the spaces opened so far, use their email"
