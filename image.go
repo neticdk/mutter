@@ -150,7 +150,6 @@ func download(ref string, do func() (*http.Response, error), lay layout) imageMs
 	if err != nil {
 		return imageMsg{ref: ref, err: err}
 	}
-	debugWrite(key+".orig", data)
 	if g, err := gif.DecodeAll(bytes.NewReader(data)); err == nil {
 		msg := decodeGIF(g, lay)
 		msg.ref = ref
@@ -169,7 +168,6 @@ func download(ref string, do func() (*http.Response, error), lay layout) imageMs
 	if err != nil {
 		return imageMsg{ref: ref, err: err}
 	}
-	debugWrite(key+".png", out)
 	return imageMsg{ref: ref, pngs: [][]byte{out}, cols: cols, rows: rows}
 }
 
@@ -277,10 +275,7 @@ func (im *images) add(msg imageMsg) (string, tea.Cmd) {
 	i.cols, i.rows = msg.cols, msg.rows
 	i.ready = true
 	seq := kittyTransmit(i.id, i.cols, i.rows, msg.pngs[0])
-	key := debugKey(msg.ref)
-	log.Printf("image %s: id=%d cells=%dx%d frames=%d seq=%d bytes", key, i.id, i.cols, i.rows, len(msg.pngs), len(seq))
-	// cat this file in the terminal to replay the image outside the TUI.
-	debugWrite(key+".kitty", []byte(seq+kittyPlaceholder(i.id, i.cols, i.rows)+"\x1b[0m\n"))
+	log.Printf("image %s: id=%d cells=%dx%d frames=%d seq=%d bytes", debugKey(msg.ref), i.id, i.cols, i.rows, len(msg.pngs), len(seq))
 	if len(msg.pngs) == 1 {
 		return seq, nil
 	}

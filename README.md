@@ -219,6 +219,3 @@ This writes to the directory:
 
 - `mutter.log`: API errors, raw spaces, memberships and events, image decoding
 - `tty.out`: every byte sent to the terminal. It grows fast while GIFs animate, so keep runs short.
-- `<key>.orig`: each image as downloaded
-- `<key>.png`: each image as re-encoded
-- `<key>.kitty`: the escape sequences sent for each image, followed by its placeholder cells. `cat` it to replay the image outside the TUI.

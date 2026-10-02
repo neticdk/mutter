@@ -96,8 +96,7 @@ func loadConfig() (config, error) {
 	return cfg, nil
 }
 
-// debugDir is set from MUTTER_DEBUG. It receives mutter.log and a copy of
-// each image at every pipeline stage.
+// debugDir is set from MUTTER_DEBUG. It receives mutter.log and tty.out.
 var debugDir string
 
 func setupDebug() error {
@@ -111,15 +110,6 @@ func setupDebug() error {
 	}
 	_, err := tea.LogToFile(filepath.Join(debugDir, "mutter.log"), "")
 	return err
-}
-
-func debugWrite(name string, b []byte) {
-	if debugDir == "" {
-		return
-	}
-	if err := os.WriteFile(filepath.Join(debugDir, name), b, 0o600); err != nil {
-		log.Printf("debug write %s: %v", name, err)
-	}
 }
 
 // debugJSON logs v as JSON, to inspect raw API responses.
@@ -143,7 +133,7 @@ func (t teeFile) Write(b []byte) (int, error) {
 	return t.File.Write(b)
 }
 
-// debugKey turns a long resource name into a short file name.
+// debugKey turns a long resource name into a short key for log lines.
 func debugKey(ref string) string {
 	sum := sha256.Sum256([]byte(ref))
 	return hex.EncodeToString(sum[:6])
