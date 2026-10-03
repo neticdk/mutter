@@ -181,7 +181,7 @@ To use a different OAuth client, for example during development, write it to `~/
 | ↑ ↓ with an empty input | select a thread, or a message inside a thread |
 | ↑ on the oldest thread | load older history |
 | pgup, pgdown | scroll |
-| tab after `@name` | complete an @mention, so the person is notified |
+| tab, shift+tab | complete an @mention or a `/dm` argument. Repeated presses cycle through the suggestions. |
 | esc | cancel editing or quoting, end selection, leave the thread |
 
 While a thread or message is selected, letter keys act on it. Any other key goes to the input.
@@ -192,6 +192,8 @@ While a thread or message is selected, letter keys act on it. Any other key goes
 | `e` | edit your own message |
 | `d` | delete your own message, confirmed with `y` |
 | `q` | quote it in your next message |
+| `y` | copy its text to the clipboard, over OSC 52 |
+| `l` | open a link in it. With several, pick one with `1`–`9`. |
 | `u` | mark the space unread from this message onward |
 | `o` | open its files |
 | `s` | save its files to `~/Downloads` |
@@ -200,7 +202,7 @@ While a thread or message is selected, letter keys act on it. Any other key goes
 
 | Command | Action |
 |---|---|
-| `/dm NAME` or `/dm EMAIL` | open or start a DM. Names match members of spaces opened this session. |
+| `/dm WHO` | open or start a DM. `WHO` is an email address, a short name such as `kn` tried at your own domain first, or part of a name. |
 | `/attach PATH [text]` | upload a file into the open thread, or as a new thread. Quote paths with spaces. |
 | `/open [n]` | open file `n` of the selected or open thread, the last one by default |
 | `/save [n]` | save file `n` to `~/Downloads` |
@@ -249,7 +251,7 @@ Planned improvements are in [ROADMAP.md](ROADMAP.md). The ones under Chat API ca
 
 - An @mention notifies only when completed with tab. A typed `@name` stays plain text.
 - Editing a message sends its mentions back as plain text.
-- `/dm NAME` only knows members of the spaces opened since startup. Use an email address for anyone else.
+- `/dm` matches names and completes only members of the spaces opened since startup. Short names at your own domain and full email addresses work for anyone.
 
 ### Images and files
 

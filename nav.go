@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"log"
 	"slices"
 	"strings"
@@ -137,55 +138,86 @@ func (m *model) applySpace(msg spaceInfoMsg) tea.Cmd {
 	return nil
 }
 
-// dmCmd opens the DM with who, an email address or a name from the
-// members of loaded spaces, creating the DM when needed.
+// dmCmd opens the DM with who, creating it when needed. who is an email
+// address, a short name such as "kn", or part of a name. A short name tries
+// the user's own domain first, so kn becomes kn@example.com for a user at
+// example.com, then the people known from loaded spaces.
 func (m *model) dmCmd(who string) tea.Cmd {
 	who = strings.TrimSpace(strings.TrimPrefix(who, "@"))
 	if who == "" {
 		m.notice = "usage: /dm NAME or /dm EMAIL"
 		return nil
 	}
-	user := ""
 	if strings.Contains(who, "@") {
-		user = "users/" + who
-	} else {
-		var all []member
-		seen := map[string]bool{}
-		for _, ms := range m.members {
-			for _, x := range ms {
-				if !seen[x.id] {
-					seen[x.id] = true
-					all = append(all, x)
-				}
-			}
+		return m.openDM([]string{"users/" + who}, "")
+	}
+	var tries []string
+	if _, domain, ok := strings.Cut(m.c.me, "@"); ok && !strings.ContainsAny(who, " \t") {
+		tries = append(tries, "users/"+who+"@"+domain)
+	}
+	match, candidates := dmMatch(m.knownPeople(), who)
+	if match != "" {
+		tries = append(tries, match)
+	}
+	fail := "no one called " + who + " in the spaces opened so far, use their email"
+	if len(candidates) > 1 {
+		names := make([]string, 0, len(candidates))
+		for _, x := range candidates {
+			names = append(names, cmp.Or(x.email, x.name))
 		}
-		matches := slices.DeleteFunc(suggest(all, who), func(x member) bool { return x.id == allUsers })
-		switch len(matches) {
-		case 0:
-			m.notice = "no one called " + who + " in the spaces opened so far, use their email"
-			return nil
-		case 1:
-			user = matches[0].id
-		default:
-			var names []string
-			for _, x := range matches {
-				names = append(names, x.name)
-			}
-			m.notice = "which one: " + strings.Join(names, ", ")
-			return nil
+		fail = "which one: " + strings.Join(names, ", ")
+	}
+	return m.openDM(tries, fail)
+}
+
+// dmMatch picks the person who refers to from people: the only one whose
+// address starts with who@, or else the only one whose name matches. With
+// no single match it returns every candidate.
+func dmMatch(people []member, who string) (string, []member) {
+	var byEmail, byName []member
+	for _, p := range people {
+		if local, _, _ := strings.Cut(p.email, "@"); strings.EqualFold(local, who) {
+			byEmail = append(byEmail, p)
+		}
+		if nameMatches(p.name, who) {
+			byName = append(byName, p)
 		}
 	}
+	switch {
+	case len(byEmail) == 1:
+		return byEmail[0].id, nil
+	case len(byEmail) > 1:
+		return "", byEmail
+	case len(byName) == 1:
+		return byName[0].id, nil
+	}
+	return "", byName
+}
+
+// openDM opens the DM with the first user in tries that works. A user that
+// doesn't exist fails when its DM is created, so the next one gets a try.
+// fail is the notice when none works.
+func (m *model) openDM(tries []string, fail string) tea.Cmd {
 	m.notice = "opening DM…"
 	return func() tea.Msg {
-		name, err := m.c.dm(m.ctx, user)
-		if err != nil {
-			return errMsg(err)
+		var lastErr error
+		for _, user := range tries {
+			name, err := m.c.dm(m.ctx, user)
+			if err != nil {
+				log.Printf("dm %s: %v", user, err)
+				lastErr = err
+				continue
+			}
+			s, gone, err := m.c.getSpace(m.ctx, name)
+			if err != nil {
+				return errMsg(err)
+			}
+			return spaceInfoMsg{space: s, name: name, gone: gone, open: true}
 		}
-		s, gone, err := m.c.getSpace(m.ctx, name)
-		if err != nil {
-			return errMsg(err)
+		if fail != "" {
+			return noticeMsg(fail)
 		}
-		return spaceInfoMsg{space: s, name: name, gone: gone, open: true}
+		return errMsg(lastErr)
 	}
 }
 

@@ -16,8 +16,9 @@ import (
 )
 
 type member struct {
-	id   string // users/123
-	name string
+	id    string // users/123
+	name  string
+	email string
 }
 
 type membersMsg struct {
@@ -32,7 +33,8 @@ func (c *client) members(ctx context.Context, space string) ([]member, error) {
 	err := c.svc.Spaces.Members.List(space).Filter(`member.type = "HUMAN"`).PageSize(1000).Pages(ctx, func(r *chat.ListMembershipsResponse) error {
 		for _, m := range r.Memberships {
 			if u := m.Member; u != nil && u.Name != c.meID && u.DisplayName != "" {
-				out = append(out, member{id: u.Name, name: u.DisplayName})
+				// Names and addresses reach the status line in suggestions.
+				out = append(out, member{id: u.Name, name: clean(u.DisplayName), email: clean(u.Email)})
 			}
 		}
 		return nil
@@ -66,15 +68,9 @@ func mentionQuery(text string) (q string, at int, ok bool) {
 // suggest returns members whose name, or a word of it, starts with q,
 // plus @all, at most five.
 func suggest(members []member, q string) []member {
-	q = strings.ToLower(q)
 	var out []member
 	for _, m := range append(members, member{id: allUsers, name: "all"}) {
-		name := strings.ToLower(m.name)
-		match := strings.HasPrefix(name, q)
-		for w := range strings.FieldsSeq(name) {
-			match = match || strings.HasPrefix(w, q)
-		}
-		if match {
+		if nameMatches(m.name, q) {
 			out = append(out, m)
 		}
 		if len(out) == 5 {
@@ -84,31 +80,129 @@ func suggest(members []member, q string) []member {
 	return out
 }
 
-// suggestions are the completions for the mention being typed, if any.
-func (m *model) suggestions() []member {
-	if m.cur < 0 {
-		return nil
+// nameMatches reports whether name, or a word of it, starts with q,
+// ignoring case.
+func nameMatches(name, q string) bool {
+	name, q = strings.ToLower(name), strings.ToLower(q)
+	if strings.HasPrefix(name, q) {
+		return true
 	}
-	q, _, ok := mentionQuery(m.ta.Value())
-	if !ok {
-		return nil
+	for w := range strings.FieldsSeq(name) {
+		if strings.HasPrefix(w, q) {
+			return true
+		}
 	}
-	return suggest(m.members[m.spaces[m.cur].name], q)
+	return false
 }
 
-// complete replaces the mention being typed with the top suggestion and
-// remembers it, so the send turns it into a real mention.
-func (m *model) complete() bool {
-	s := m.suggestions()
-	if len(s) == 0 {
-		return false
+// completion is an active tab cycle through suggestions.
+type completion struct {
+	list  []member
+	idx   int
+	start int    // where the completed text begins in the input
+	dm    bool   // completing a /dm argument, not an @mention
+	text  string // the input right after the last completion
+}
+
+// completionQuery finds what's being completed at the end of text: the
+// argument of /dm, or an @mention.
+func completionQuery(text string) (q string, start int, dm, ok bool) {
+	if rest, found := strings.CutPrefix(text, "/dm "); found && rest != "" && !strings.ContainsRune(rest, '\n') {
+		return rest, len("/dm "), true, true
 	}
-	text := m.ta.Value()
-	_, at, _ := mentionQuery(text)
-	display := "@" + s[0].name
-	m.mentions[display] = "<" + s[0].id + ">"
-	m.ta.SetValue(text[:at] + display + " ")
+	q, at, ok := mentionQuery(text)
+	return q, at, false, ok
+}
+
+// suggestions returns the completion candidates and the highlighted one:
+// the active cycle while the input is unchanged since the last tab,
+// otherwise fresh matches for what's being typed.
+func (m *model) suggestions() ([]member, int, bool) {
+	if c := m.comp; c != nil && m.ta.Value() == c.text {
+		return c.list, c.idx, c.dm
+	}
+	q, _, dm, ok := completionQuery(m.ta.Value())
+	if !ok || m.cur < 0 {
+		return nil, 0, false
+	}
+	if dm {
+		return suggestPeople(m.knownPeople(), q), 0, true
+	}
+	return suggest(m.members[m.spaces[m.cur].name], q), 0, false
+}
+
+// complete inserts a suggestion. The first tab inserts the top one, and
+// further tabs, step 1, or shift+tabs, step -1, cycle through the rest.
+// Completed @mentions are remembered, so the send turns them into real
+// mentions.
+func (m *model) complete(step int) bool {
+	if c := m.comp; c != nil && m.ta.Value() == c.text {
+		c.idx = (c.idx + step + len(c.list)) % len(c.list)
+	} else {
+		list, _, dm := m.suggestions()
+		if len(list) == 0 {
+			return false
+		}
+		_, start, _, _ := completionQuery(m.ta.Value())
+		m.comp = &completion{list: list, start: start, dm: dm}
+		if step < 0 {
+			m.comp.idx = len(list) - 1
+		}
+	}
+	c := m.comp
+	x := c.list[c.idx]
+	ins := cmp.Or(x.email, x.name)
+	if !c.dm {
+		ins = "@" + x.name + " "
+		m.mentions["@"+x.name] = "<" + x.id + ">"
+	}
+	c.text = m.ta.Value()[:c.start] + ins
+	m.ta.SetValue(c.text)
 	return true
+}
+
+// tabStep is the completion direction for key k: 1 for tab, -1 for
+// shift+tab, 0 for any other key.
+func tabStep(k string) int {
+	switch k {
+	case "tab":
+		return 1
+	case "shift+tab":
+		return -1
+	}
+	return 0
+}
+
+// knownPeople is every member of the spaces loaded this session, once each.
+func (m *model) knownPeople() []member {
+	var out []member
+	seen := map[string]bool{}
+	for _, ms := range m.members {
+		for _, x := range ms {
+			if !seen[x.id] {
+				seen[x.id] = true
+				out = append(out, x)
+			}
+		}
+	}
+	slices.SortFunc(out, func(a, b member) int { return strings.Compare(a.name, b.name) })
+	return out
+}
+
+// suggestPeople matches q against names, as suggest does, and against the
+// start of email addresses, at most five and without @all.
+func suggestPeople(people []member, q string) []member {
+	lq := strings.ToLower(q)
+	var out []member
+	for _, p := range people {
+		if strings.HasPrefix(strings.ToLower(p.email), lq) || nameMatches(p.name, q) {
+			out = append(out, p)
+		}
+		if len(out) == 5 {
+			break
+		}
+	}
+	return out
 }
 
 // expandMentions turns completed @names into Chat's <users/ID> syntax,

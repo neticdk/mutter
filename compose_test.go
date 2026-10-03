@@ -28,7 +28,7 @@ func TestMentionQuery(t *testing.T) {
 }
 
 func TestSuggestAndExpand(t *testing.T) {
-	members := []member{{"users/1", "Kim Nørgaard"}, {"users/2", "Mads Nygaard"}, {"users/3", "Nils Lundberg"}}
+	members := []member{{id: "users/1", name: "Kim Nørgaard"}, {id: "users/2", name: "Mads Nygaard"}, {id: "users/3", name: "Nils Lundberg"}}
 	got := suggest(members, "nø")
 	if len(got) != 1 || got[0].id != "users/1" {
 		t.Errorf("suggest by second word = %v", got)

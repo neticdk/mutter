@@ -4,7 +4,10 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"html"
 	"net/url"
+	"regexp"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -15,7 +18,11 @@ import (
 const (
 	modeReact  = "react"
 	modeDelete = "delete"
+	modeLink   = "link"
 )
+
+// maxLinks is how many links the link prompt offers, one per digit key.
+const maxLinks = 9
 
 // quickReactions are the emoji the react prompt offers on keys 1 to 6.
 var quickReactions = []string{"👍", "❤️", "😂", "🎉", "👀", "✅"}
@@ -100,6 +107,19 @@ func (m *model) action(k string) (cmd tea.Cmd, ok bool) {
 		m.render()
 	case "u":
 		return m.unreadFrom(sel.CreateTime), true
+	case "y":
+		m.notice = "copied the message"
+		return tea.SetClipboard(cmp.Or(sel.Text, sel.FallbackText)), true
+	case "l":
+		links := linksOf(sel)
+		switch len(links) {
+		case 0:
+			m.notice = "no links in this message"
+		case 1:
+			m.openLink(links[0])
+		default:
+			m.mode, m.links = modeLink, links
+		}
 	case "o", "s":
 		files := filesOf(sel)
 		if len(files) == 0 {
@@ -138,6 +158,13 @@ func (m model) updateMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 			return messageEvent{kind: kindUpdated, name: name, msg: updated}
 		}
+	case modeLink:
+		var n int
+		if _, err := fmt.Sscanf(msg.String(), "%d", &n); err != nil || n < 1 || n > len(m.links) {
+			return m, nil
+		}
+		m.openLink(m.links[n-1])
+		return m, nil
 	case modeDelete:
 		if msg.String() != "y" {
 			return m, nil
@@ -270,6 +297,72 @@ func (m *model) unreadFrom(at string) tea.Cmd {
 	}
 }
 
+// urlInText finds URLs in message text. Chat writes labeled links as
+// <url|label>, so | and > end a URL too.
+var urlInText = regexp.MustCompile(`https?://[^\s<>"|]+`)
+
+// linksOf returns the links in msg, in order and without duplicates: URLs in
+// the text, link previews, and card buttons and links. It returns at most
+// maxLinks.
+func linksOf(msg *chat.Message) []string {
+	var out []string
+	add := func(u string) {
+		// Links come from other people and reach the status line.
+		u = strings.TrimRight(clean(u), ".,;:!?)]'")
+		if u != "" && !slices.Contains(out, u) && len(out) < maxLinks {
+			out = append(out, u)
+		}
+	}
+	for _, u := range urlInText.FindAllString(msg.Text, -1) {
+		add(u)
+	}
+	for _, a := range msg.Annotations {
+		if a.RichLinkMetadata != nil {
+			add(a.RichLinkMetadata.Uri)
+		}
+	}
+	for _, c := range msg.CardsV2 {
+		if c.Card == nil {
+			continue
+		}
+		for _, sec := range c.Card.Sections {
+			for _, w := range sec.Widgets {
+				if w.ButtonList != nil {
+					for _, b := range w.ButtonList.Buttons {
+						if b.OnClick != nil && b.OnClick.OpenLink != nil {
+							add(b.OnClick.OpenLink.Url)
+						}
+					}
+				}
+				if w.TextParagraph != nil {
+					for _, sub := range aTag.FindAllStringSubmatch(w.TextParagraph.Text, -1) {
+						add(html.UnescapeString(sub[1]))
+					}
+				}
+			}
+		}
+	}
+	return out
+}
+
+// openLink opens u in the browser, through the same http(s) check as files.
+func (m *model) openLink(u string) {
+	if err := openURL(file{label: shortURL(u), url: u}); err != nil {
+		m.notice = err.Error()
+		return
+	}
+	m.notice = "opened " + shortURL(u)
+}
+
+// shortURL trims a URL for the status line.
+func shortURL(u string) string {
+	u = strings.TrimPrefix(strings.TrimPrefix(u, "https://"), "http://")
+	if r := []rune(u); len(r) > 40 {
+		return string(r[:39]) + "…"
+	}
+	return u
+}
+
 // reactions renders a message's reaction summary, such as "👍 3  🎉 1".
 func reactions(msg *chat.Message) string {
 	var parts []string
@@ -295,6 +388,12 @@ func (m *model) modeHint() string {
 			picks = append(picks, fmt.Sprintf("%d %s", i+1, e))
 		}
 		return "react: " + strings.Join(picks, "  ") + dimStyle.Render(" · again removes it · any other key cancels")
+	case m.mode == modeLink:
+		picks := make([]string, 0, len(m.links))
+		for i, l := range m.links {
+			picks = append(picks, fmt.Sprintf("%d %s", i+1, shortURL(l)))
+		}
+		return "open: " + strings.Join(picks, "  ") + dimStyle.Render(" · any other key cancels")
 	case m.mode == modeDelete:
 		return boldStyle.Render("delete this message?") + dimStyle.Render(" y to confirm, any other key cancels")
 	case m.editing != nil:
@@ -302,7 +401,7 @@ func (m *model) modeHint() string {
 	case m.quoting != nil:
 		return boldStyle.Render("quoting "+senderName(m.quoting)) + dimStyle.Render(" · enter send · esc cancel")
 	case m.selecting:
-		return dimStyle.Render("r react · e edit · d delete · q quote · u unread from here · o open · s save · esc done")
+		return dimStyle.Render("r react · e edit · d delete · q quote · y copy · l links · u unread from here · o open files · s save files · esc done")
 	}
 	return ""
 }

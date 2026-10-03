@@ -87,7 +87,8 @@ type model struct {
 	// keys act on it.
 	selecting bool
 	msgCursor int           // selected message in the thread view
-	mode      string        // modeReact or modeDelete while waiting for the next key
+	mode      string        // modeReact, modeDelete or modeLink while waiting for the next key
+	links     []string      // what the link prompt offers
 	editing   *chat.Message // message whose text is in the input
 	quoting   *chat.Message // message the next send quotes
 
@@ -96,6 +97,7 @@ type model struct {
 	loadingOlder bool
 
 	members  map[string][]member // by space, for @mention completion
+	comp     *completion         // active tab cycle, see complete
 	mentions map[string]string   // completed "@Name" in the draft to "<users/ID>"
 
 	vp viewport.Model
@@ -419,6 +421,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyPressMsg:
 		m.notice = ""
+		if tabStep(msg.String()) == 0 {
+			m.comp = nil
+		}
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
@@ -449,8 +454,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			m.vp, cmd = m.vp.Update(msg)
 			return m, cmd
-		case "tab":
-			if m.complete() {
+		case "tab", "shift+tab":
+			if m.complete(tabStep(msg.String())) {
 				return m, nil
 			}
 		case "esc":
@@ -1015,11 +1020,17 @@ func (m model) View() tea.View {
 		status = m.modeHint()
 	}
 	if status == "" {
-		if s := m.suggestions(); len(s) > 0 {
+		if s, idx, dm := m.suggestions(); len(s) > 0 {
 			names := make([]string, 0, len(s))
 			for i, x := range s {
 				n := "@" + x.name
-				if i == 0 {
+				if dm {
+					n = x.name
+					if x.email != "" {
+						n += " " + dimStyle.Render(x.email)
+					}
+				}
+				if i == idx {
 					n = boldStyle.Render(n)
 				}
 				names = append(names, n)
