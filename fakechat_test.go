@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -28,6 +31,8 @@ type fakeChat struct {
 	reacts map[string][]*chat.Reaction
 	clock  time.Time
 	nextID int
+	// uploads holds uploaded files by name.
+	uploads map[string][]byte
 }
 
 const fakeMe = "users/me1"
@@ -44,7 +49,7 @@ func emojiKey(e *chat.Emoji) string {
 }
 
 func newFakeChat(t testing.TB) *fakeChat {
-	return &fakeChat{t: t, msgs: map[string][]*chat.Message{}, reacts: map[string][]*chat.Reaction{}, clock: time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)}
+	return &fakeChat{t: t, uploads: map[string][]byte{}, msgs: map[string][]*chat.Message{}, reacts: map[string][]*chat.Reaction{}, clock: time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)}
 }
 
 // tick returns a timestamp later than every earlier one.
@@ -151,6 +156,8 @@ func (f *fakeChat) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch {
+	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/upload/v1/") && strings.HasSuffix(path, "/attachments:upload"):
+		f.upload(w, r)
 	case r.Method == http.MethodGet && path == "customEmojis":
 		reply(chat.ListCustomEmojisResponse{CustomEmojis: []*chat.CustomEmoji{fakeParrot}})
 	case r.Method == http.MethodGet && path == "spaces":
@@ -251,6 +258,37 @@ func (f *fakeChat) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+// upload takes a multipart media upload: JSON metadata with the file
+// name, then the file.
+func (f *fakeChat) upload(w http.ResponseWriter, r *http.Request) {
+	_, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil {
+		f.t.Errorf("fake chat: upload: %v", err)
+		return
+	}
+	mr := multipart.NewReader(r.Body, params["boundary"])
+	var meta chat.UploadAttachmentRequest
+	if err := json.NewDecoder(must(mr.NextPart())).Decode(&meta); err != nil {
+		f.t.Errorf("fake chat: upload metadata: %v", err)
+		return
+	}
+	data, err := io.ReadAll(must(mr.NextPart()))
+	if err != nil {
+		f.t.Errorf("fake chat: upload data: %v", err)
+		return
+	}
+	f.uploads[meta.Filename] = data
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(chat.UploadAttachmentResponse{AttachmentDataRef: &chat.AttachmentDataRef{ResourceName: "uploads/" + meta.Filename}}) // a failed write fails the client's call
+}
+
+func must[T any](v T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return v
 }
 
 // fakeClient serves a client from a fake Chat API.

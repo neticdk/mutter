@@ -147,12 +147,16 @@ func (im *images) fetch(ctx context.Context, c *client, msgs []*chat.Message) te
 // Unicode emoji. Its URL is temporary, so the UID is the cache key. The URL
 // comes from e when the API filled it in, or from the organization's list.
 func (im *images) fetchEmoji(ctx context.Context, e *chat.CustomEmoji) tea.Cmd {
-	ref, url := emojiRef(e.Uid), cmp.Or(e.TemporaryImageUri, im.emoji[e.Uid])
+	lay := layout{cellW: im.layout.cellW, cellH: im.layout.cellH, maxCols: 2, maxRows: 1}
+	return im.fetchURL(ctx, emojiRef(e.Uid), cmp.Or(e.TemporaryImageUri, im.emoji[e.Uid]), lay)
+}
+
+// fetchURL loads the image at a public URL as ref, sized for lay.
+func (im *images) fetchURL(ctx context.Context, ref, url string, lay layout) tea.Cmd {
 	if !im.enabled || url == "" || im.byRef[ref] != nil {
 		return nil
 	}
 	im.byRef[ref] = &img{}
-	lay := layout{cellW: im.layout.cellW, cellH: im.layout.cellH, maxCols: 2, maxRows: 1}
 	st := im.store
 	return func() tea.Msg { return cachedDownload(st, ref, httpGet(ctx, url), lay) } //nolint:bodyclose // download closes it
 }

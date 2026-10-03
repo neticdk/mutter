@@ -26,6 +26,7 @@ Built, but not yet seen working end to end.
 - [x] **Code blocks**: fenced blocks get a left bar and start on their own line. Inline code stays cyan. No syntax highlighting.
 - [x] **Emoji**: `:shortcode:` completion with tab, complete codes expanded on send, and a reaction picker that searches all emoji
 - [x] **Custom emoji**: the organization's custom emoji in `:` completion and the `r` search, sent as `<customEmojis/ID>`, and shown as images in reactions and messages, animated when they're GIFs
+- [x] **GIF search**: `/gif QUERY` searches GIPHY with the user's own `GIPHY_API_KEY` and attaches the pick to the next message
 - [ ] **Configuration**: key bindings and a light theme from a config file
 - [x] **Cycling @mention suggestions**: tab moves through the suggestions shown, shift+tab back.
 - [x] **`/dm` by short name**: `/dm kn` tries `kn@` the user's own domain first, then a single known member whose address starts with `kn@`, and lists the candidates when several match. Tab completes names and addresses.

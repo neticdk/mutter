@@ -15,6 +15,7 @@ Terminal client for Google Chat, for Workspace organizations.
 - Spaces and images cached locally and encrypted, so switching spaces and restarting are fast
 - Cards rendered as text, images and animated GIFs drawn in the terminal
 - File upload, download and open, and images pasted from the clipboard or dropped on the terminal
+- GIF search through GIPHY with `/gif`, when you set your own API key
 
 ## Setup (once per organization)
 
@@ -223,11 +224,21 @@ Dropping an image file on the terminal pastes its path, and mutter attaches the 
 | `/away` | show as away until you're active again |
 | `/active [DURATION]` | show as active, back to activity-based after `DURATION` |
 | `/status [EMOJI] [TEXT]` | set your status, with 💬 when no emoji is given. Without text, it's cleared. |
+| `/gif QUERY` | search GIPHY and pick a GIF with ← → or tab. Enter attaches it to your next message. Needs `GIPHY_API_KEY`, see [GIFs](#gifs). |
 | `/help` | show keys and commands |
 | `/logout` | delete the stored token and the local cache, and quit |
 | `/quit` | quit |
 
 Saved files get the macOS quarantine attribute, so Gatekeeper checks them before they run. Leading dots are stripped from their names, so a file can't land as a hidden dotfile. `/save` creates `~/Downloads` when it's missing. `/open` downloads into mutter's directory in the user cache dir. `/open` only follows http and https links, and only http and https links in cards are clickable.
+
+### GIFs
+
+`/gif` uses your own GIPHY API key, so mutter ships without one and you accept GIPHY's terms yourself:
+
+1. Create an app at [developers.giphy.com](https://developers.giphy.com) and copy its API key.
+2. Set it in your shell profile, for example `set -Ux GIPHY_API_KEY <key>` in fish or `export GIPHY_API_KEY=<key>` in bash and zsh.
+
+Each search is one API request, and a new key allows 100 an hour. Previews and the GIF you send come from GIPHY's media servers and don't count. The picked GIF is downloaded and sent as an uploaded image, since the Chat API can't post GIFs the way the web client's picker does. Searches use the `pg` rating.
 
 ### Local cache
 

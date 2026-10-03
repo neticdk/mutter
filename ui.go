@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -96,6 +97,9 @@ type model struct {
 	newBelow int    // threads that arrived below the cursor
 	notice   string // shown in place of the hints until the next key press
 	help     bool   // the ? overlay covers the messages
+	giphyKey string // from GIPHY_API_KEY, empty turns /gif off
+	gifs     []gifResult
+	gifIdx   int // selected GIF in the picker
 
 	// Message actions. selecting means arrows picked a message, so letter
 	// keys act on it.
@@ -157,7 +161,7 @@ func newModel(ctx context.Context, c *client, events <-chan tea.Msg) model {
 	f := textinput.New()
 	f.Prompt = "switch to: "
 
-	return model{ctx: ctx, c: c, events: events, focused: true, cur: -1, members: map[string][]member{}, mentions: map[string]string{}, drafts: loadDrafts(c.me), sidebarOn: loadPrefs().Sidebar, readTimes: loadReadTimes(c.me), mem: map[string]*cachedSpace{}, ta: ta, filter: f, vp: viewport.New(), imgs: newImages(), rc: newRenderCache(), status: "loading spaces…"}
+	return model{ctx: ctx, c: c, events: events, focused: true, cur: -1, members: map[string][]member{}, mentions: map[string]string{}, drafts: loadDrafts(c.me), sidebarOn: loadPrefs().Sidebar, readTimes: loadReadTimes(c.me), mem: map[string]*cachedSpace{}, ta: ta, filter: f, vp: viewport.New(), imgs: newImages(), rc: newRenderCache(), giphyKey: os.Getenv("GIPHY_API_KEY"), status: "loading spaces…"}
 }
 
 func (m model) Init() tea.Cmd {
@@ -331,6 +335,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, m.markRead(m.spaces[m.cur].name))
 		}
 		return m, tea.Batch(cmds...)
+
+	case gifResultsMsg:
+		return m, m.showGIFs(msg)
 
 	case pastedMsg:
 		m.pending = append(m.pending, pending(msg))
@@ -641,6 +648,8 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 		return m, m.attachCmd(text)
 	case "/dm":
 		return m, m.dmCmd(strings.TrimPrefix(text, "/dm"))
+	case "/gif":
+		return m, m.gifCmd(strings.TrimPrefix(text, "/gif"))
 	case "/unread":
 		if t := m.target(); t != nil {
 			return m, m.unreadFrom(t.msgs[0].CreateTime)
@@ -1177,6 +1186,8 @@ func (m model) View() tea.View {
 	switch {
 	case m.help:
 		body = lipgloss.NewStyle().Width(m.width).Height(m.vp.Height()).Render(helpView(m.width, m.vp.Height()))
+	case m.mode == modeGIF:
+		body = m.gifView(m.vp.Height())
 	case m.switching:
 		body = m.switcherView()
 	case m.sidebarShown():

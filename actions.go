@@ -148,8 +148,11 @@ func (m *model) action(k string) (cmd tea.Cmd, ok bool) {
 // updateMode handles the key after r (pick a reaction), l (pick a link) or
 // d (confirm).
 func (m model) updateMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	if m.mode == modeReact {
+	switch m.mode {
+	case modeReact:
 		return m.updateReact(msg)
+	case modeGIF:
+		return m.updateGIF(msg)
 	}
 	mode, sel := m.mode, m.selected()
 	m.mode = ""
@@ -462,6 +465,8 @@ func (m *model) modeHint() string {
 			picks = append(picks, fmt.Sprintf("%d %s", i+1, e))
 		}
 		return "react: " + strings.Join(picks, "  ") + dimStyle.Render(" · or type a name · again removes it · esc cancels")
+	case m.mode == modeGIF:
+		return "gif: ← → or tab move · enter attaches it to your next message · esc cancels"
 	case m.mode == modeLink:
 		picks := make([]string, 0, len(m.links))
 		for i, l := range m.links {

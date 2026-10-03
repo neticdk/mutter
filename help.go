@@ -35,6 +35,7 @@ var (
 	helpCommands = [][2]string{
 		{"/dm WHO", "open or start a DM"},
 		{"/attach PATH [text]", "upload a file"},
+		{"/gif QUERY", "search GIPHY, needs GIPHY_API_KEY"},
 		{"/open [n]", "open a file"},
 		{"/save [n]", "save a file to ~/Downloads"},
 		{"/unread", "mark unread from the thread"},
