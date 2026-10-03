@@ -30,6 +30,11 @@ const (
 	maxImageBytes = 20 << 20
 	maxImageCols  = 60
 	maxGIFFrames  = 150
+
+	// Decoded size limits. A still decodes to 4 bytes per pixel, a GIF frame
+	// to 1.
+	maxImagePixels = 1 << 24
+	maxGIFPixels   = 1 << 26
 )
 
 // Images use the kitty graphics protocol with Unicode placeholders. The
@@ -151,13 +156,32 @@ func download(ref string, do func() (*http.Response, error), lay layout) imageMs
 	if err != nil {
 		return imageMsg{ref: ref, err: err}
 	}
-	if g, err := gif.DecodeAll(bytes.NewReader(data)); err == nil {
+	// Decoding allocates by the declared size, which a small file can set
+	// to gigabytes, so it's checked first.
+	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		log.Printf("image %s: decode: %v", key, err)
+		return imageMsg{ref: ref, err: err}
+	}
+	pixels := cfg.Width * cfg.Height
+	if pixels == 0 || pixels > maxImagePixels {
+		return imageMsg{ref: ref, err: fmt.Errorf("image is %dx%d pixels", cfg.Width, cfg.Height)}
+	}
+	if format == "gif" {
+		// Every frame decodes to the full canvas at most, so capping the
+		// frames bounds the total.
+		frames := min(maxGIFFrames, maxGIFPixels/pixels)
+		g, err := gif.DecodeAll(bytes.NewReader(gifPrefix(data, frames)))
+		if err != nil {
+			log.Printf("image %s: decode: %v", key, err)
+			return imageMsg{ref: ref, err: err}
+		}
 		msg := decodeGIF(g, lay)
 		msg.ref = ref
 		log.Printf("image %s: format=gif frames=%d cells=%dx%d err=%v", key, len(msg.pngs), msg.cols, msg.rows, msg.err)
 		return msg
 	}
-	src, format, err := image.Decode(bytes.NewReader(data))
+	src, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		log.Printf("image %s: decode: %v", key, err)
 		return imageMsg{ref: ref, err: err}
@@ -170,6 +194,58 @@ func download(ref string, do func() (*http.Response, error), lay layout) imageMs
 		return imageMsg{ref: ref, err: err}
 	}
 	return imageMsg{ref: ref, pngs: [][]byte{out}, cols: cols, rows: rows}
+}
+
+// gifPrefix cuts a GIF after n frames by walking its blocks. A GIF it can't
+// walk comes back truncated, so decoding fails instead of running unbounded.
+func gifPrefix(data []byte, n int) []byte {
+	const header = 13 // signature and logical screen descriptor
+	if len(data) < header {
+		return data
+	}
+	i := header
+	if data[10]&0x80 != 0 {
+		i += 3 << (data[10]&7 + 1) // global color table
+	}
+	subBlocks := func() bool {
+		for i < len(data) {
+			size := int(data[i])
+			i += 1 + size
+			if size == 0 {
+				return true
+			}
+		}
+		return false
+	}
+	for frames := 0; i < len(data); {
+		switch data[i] {
+		case 0x21: // extension: introducer, label, sub-blocks
+			i += 2
+			if !subBlocks() {
+				return data[:0]
+			}
+		case 0x2c: // image descriptor
+			if frames == n {
+				return append(data[:i:i], 0x3b)
+			}
+			frames++
+			if i+10 > len(data) {
+				return data[:0]
+			}
+			if flags := data[i+9]; flags&0x80 != 0 {
+				i += 3 << (flags&7 + 1) // local color table
+			}
+			i += 11 // descriptor and LZW minimum code size
+			if !subBlocks() {
+				return data[:0]
+			}
+		case 0x3b: // trailer
+			return data[:i+1]
+		default:
+			return data[:0]
+		}
+	}
+	return data // no trailer, but every frame was counted
 }
 
 // decodeGIF composites each frame onto a canvas following the frame's

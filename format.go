@@ -79,12 +79,20 @@ func formatText(s string) string {
 	return b.String()
 }
 
+// formatInline repeats each marker until nothing changes, because a match
+// consumes the boundary character after it, which the next match needs.
 func formatInline(s string) string {
 	for _, in := range inline {
-		s = in.re.ReplaceAllStringFunc(s, func(m string) string {
-			sub := in.re.FindStringSubmatch(m)
-			return sub[1] + in.style.Render(sub[2]) + sub[3]
-		})
+		for {
+			next := in.re.ReplaceAllStringFunc(s, func(m string) string {
+				sub := in.re.FindStringSubmatch(m)
+				return sub[1] + in.style.Render(sub[2]) + sub[3]
+			})
+			if next == s {
+				break
+			}
+			s = next
+		}
 	}
 	return s
 }
@@ -111,7 +119,7 @@ func messageBody(m *chat.Message, img func(ref string) string, num *int) string 
 	}
 	for _, a := range m.Attachment {
 		*num++
-		label := dimStyle.Render(fmt.Sprintf("[%d · %s]", *num, cmp.Or(a.ContentName, a.ContentType)))
+		label := dimStyle.Render(fmt.Sprintf("[%d · %s]", *num, clean(cmp.Or(a.ContentName, a.ContentType))))
 		if s := img(imageRef(a)); s != "" {
 			parts = append(parts, s)
 		}
@@ -138,7 +146,7 @@ const maxQuoteLines = 3
 // lines so the reply stays the focus.
 func quote(q *chat.QuotedMessageMetadata) string {
 	snap := q.QuotedMessageSnapshot
-	label := snap.Sender
+	label := clean(snap.Sender)
 	if q.QuoteType == "FORWARD" {
 		label = "Forwarded from " + label
 	}

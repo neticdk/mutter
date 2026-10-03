@@ -90,6 +90,10 @@ func loadConfig() (config, error) {
 	if err := json.Unmarshal(b, &cfg); err != nil {
 		return config{}, fmt.Errorf("%s: %w", path, err)
 	}
+	if cfg.ClientID == "" && cfg.ClientSecret == "" {
+		// A file that only sets the topic keeps the baked-in client.
+		cfg.ClientID, cfg.ClientSecret = clientID, clientSecret
+	}
 	if cfg.ClientID == "" || cfg.ClientSecret == "" {
 		return config{}, fmt.Errorf("%s: client_id and client_secret are required", path)
 	}

@@ -311,5 +311,5 @@ func senderName(msg *chat.Message) string {
 	if msg.Sender == nil {
 		return ""
 	}
-	return cmp.Or(msg.Sender.DisplayName, msg.Sender.Name)
+	return clean(cmp.Or(msg.Sender.DisplayName, msg.Sender.Name))
 }
