@@ -63,7 +63,7 @@ Measure with the API call counts in `mutter.log` at `MUTTER_LOG_LEVEL=debug` bef
 
 - [ ] Per-user Pub/Sub topics, see [Isolating users](README.md#isolating-users). Blocks rollout beyond one team.
 - [ ] Token storage fallback for Linux without a Secret Service
-- [ ] `?` help overlay with keys and commands
+- [x] `?` help overlay with keys and commands, also `/help`
 
 ## Out of scope
 

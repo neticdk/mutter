@@ -51,7 +51,7 @@ func (m *model) presenceCmd(fields []string, text string) tea.Cmd {
 			_, err := av.MarkAsDoNotDisturb(availabilityName, &chat.MarkAsDoNotDisturbRequest{Ttl: ttl(d)}).Context(ctx).Do()
 			return err
 		}
-	case "/away":
+	case cmdAway:
 		do = func(ctx context.Context) error {
 			_, err := av.MarkAsAway(availabilityName, &chat.MarkAsAwayRequest{}).Context(ctx).Do()
 			return err

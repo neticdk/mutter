@@ -23,10 +23,12 @@ import (
 
 const historySize = 200
 
-// Key names compared in several places.
+// Key and command names used in several places.
 const (
-	keyEsc   = "esc"
-	keyEnter = "enter"
+	keyEsc    = "esc"
+	keyEnter  = "enter"
+	keySwitch = "ctrl+k"
+	cmdAway   = "/away"
 )
 
 var (
@@ -93,6 +95,7 @@ type model struct {
 	holdRead bool   // /unread was used, so don't mark the open space read
 	newBelow int    // threads that arrived below the cursor
 	notice   string // shown in place of the hints until the next key press
+	help     bool   // the ? overlay covers the messages
 
 	// Message actions. selecting means arrows picked a message, so letter
 	// keys act on it.
@@ -511,8 +514,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if n := sidebarKey(msg.String()); n > 0 && m.sidebarShown() {
 			return m, m.jump(n)
 		}
+		if m.help {
+			m.help = false
+			return m, nil
+		}
 		if m.mode != "" {
 			return m.updateMode(msg)
+		}
+		if msg.String() == "?" && m.ta.Value() == "" {
+			m.help = true
+			return m, nil
 		}
 		if m.selecting && m.ta.Value() == "" {
 			if cmd, ok := m.action(msg.String()); ok {
@@ -525,7 +536,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		switch msg.String() {
-		case "ctrl+k":
+		case keySwitch:
 			m.switching = true
 			m.filter.SetValue("")
 			m.resetFilter()
@@ -624,7 +635,7 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	switch fields[0] {
 	case "/open", "/save":
 		return m, m.fileCmd(fields)
-	case "/dnd", "/away", "/active", "/status":
+	case "/dnd", cmdAway, "/active", "/status":
 		return m, m.presenceCmd(fields, text)
 	case "/attach":
 		return m, m.attachCmd(text)
@@ -637,6 +648,9 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch text {
+	case "/help":
+		m.help = true
+		return m, nil
 	case "/quit":
 		return m, tea.Quit
 	case "/logout":
@@ -678,7 +692,7 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 
 func (m model) updateSwitcher(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case keyEsc, "ctrl+k":
+	case keyEsc, keySwitch:
 		m.switching = false
 		m.filter.Blur()
 		return m, m.ta.Focus()
@@ -1151,16 +1165,18 @@ func (m model) View() tea.View {
 	if unread > 0 {
 		title += " " + boldStyle.Render(fmt.Sprintf("· %d unread %s", unread, plural(unread, "space", "spaces")))
 	}
-	hint := "↑/↓ select · enter open thread · type to start a thread · ctrl+k switch · /open /save /unread · /quit"
+	hint := "↑/↓ select · enter open thread · type to start a thread · ctrl+k switch · ? help · /quit"
 	if m.newBelow > 0 {
 		hint = boldStyle.Render(fmt.Sprintf("↓ %d new", m.newBelow)) + dimStyle.Render(" · ") + dimStyle.Render(hint)
 	}
 	if m.inThread != nil {
 		title += " › thread"
-		hint = "enter reply · esc back · ↑/↓ scroll · ctrl+k switch · /open /save /unread · /quit"
+		hint = "enter reply · esc back · ↑/↓ scroll · ctrl+k switch · ? help · /quit"
 	}
 	body := m.vp.View()
 	switch {
+	case m.help:
+		body = lipgloss.NewStyle().Width(m.width).Height(m.vp.Height()).Render(helpView(m.width, m.vp.Height()))
 	case m.switching:
 		body = m.switcherView()
 	case m.sidebarShown():

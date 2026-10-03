@@ -190,6 +190,7 @@ To use a different OAuth client, for example during development, write it to `~/
 | pgup, pgdown | scroll |
 | tab, shift+tab | complete an @mention, a `/dm` argument or a `:shortcode`. Repeated presses cycle through the suggestions. |
 | esc | cancel editing or quoting, end selection, leave the thread |
+| ? with an empty input | show keys and commands. Any key closes it. |
 
 While a thread or message is selected, letter keys act on it. Any other key goes to the input.
 
@@ -222,6 +223,7 @@ Dropping an image file on the terminal pastes its path, and mutter attaches the 
 | `/away` | show as away until you're active again |
 | `/active [DURATION]` | show as active, back to activity-based after `DURATION` |
 | `/status [EMOJI] [TEXT]` | set your status, with 💬 when no emoji is given. Without text, it's cleared. |
+| `/help` | show keys and commands |
 | `/logout` | delete the stored token and the local cache, and quit |
 | `/quit` | quit |
 

@@ -236,3 +236,30 @@ func TestFlowSendCustomEmoji(t *testing.T) {
 	fl.key(tea.KeyEnter)
 	fl.sent("spaces/A", "ship <customEmojis/ce1>")
 }
+
+func TestFlowHelp(t *testing.T) {
+	f := newFakeChat(t)
+	f.addSpace("spaces/A", "Platform")
+	f.post("spaces/A", "", "users/alice", "Deploy is blocked")
+
+	fl := startFlow(t, f)
+	fl.see("Deploy is blocked")
+
+	// ? on an empty input opens the overlay, and any key closes it.
+	fl.typeText("?")
+	fl.see("any key closes")
+	fl.key(tea.KeyEscape)
+	fl.waitFor(func() bool { return !strings.Contains(fl.screen(), "any key closes") }, "the overlay to close")
+	fl.see("Deploy is blocked")
+
+	fl.typeText("/help")
+	fl.key(tea.KeyEnter)
+	fl.see("/status [EMOJI] [TEXT]")
+	fl.key('x')
+	fl.waitFor(func() bool { return !strings.Contains(fl.screen(), "any key closes") }, "the overlay to close")
+
+	// In text, ? is just a character.
+	fl.typeText("why?")
+	fl.key(tea.KeyEnter)
+	fl.sent("spaces/A", "why?")
+}
