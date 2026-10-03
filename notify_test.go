@@ -48,7 +48,7 @@ func TestMentionsAndReadState(t *testing.T) {
 	if got := readStateSpace("users/1/spaces/AAA/spaceReadState"); got != "spaces/AAA" {
 		t.Errorf("readStateSpace = %s", got)
 	}
-	if got := osc777("a;b", "c\nd"); got != "\x1b]777;notify;a b;c d\x1b\\" {
+	if got := osc777("a;b", "c\nd\u009ce"); got != "\x1b]777;notify;a b;c d e\x1b\\" {
 		t.Errorf("osc777 = %q", got)
 	}
 }

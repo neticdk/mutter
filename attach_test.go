@@ -12,6 +12,9 @@ func TestSafeName(t *testing.T) {
 		"../../.ssh/config": "config",
 		`..\..\evil.exe`:    "evil.exe",
 		"..":                "attachment",
+		"...":               "attachment",
+		".zshenv":           "zshenv",
+		"x/..bash_login":    "bash_login",
 		"":                  "attachment",
 		"dir/":              "dir",
 	} {

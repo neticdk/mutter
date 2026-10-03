@@ -52,21 +52,26 @@ func threadFiles(t *thread) []file {
 	return out
 }
 
-// downloadsDir is where /save puts files.
-func downloadsDir() string {
+// downloadsDir is where /save puts files. It's never the home directory
+// itself, where a file named like a dotfile would run at the next login.
+func downloadsDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return os.TempDir()
+		return "", err
 	}
-	if d := filepath.Join(home, "Downloads"); isDir(d) {
-		return d
-	}
-	return home
+	d := filepath.Join(home, "Downloads")
+	return d, os.MkdirAll(d, 0o700)
 }
 
-func isDir(p string) bool {
-	fi, err := os.Stat(p)
-	return err == nil && fi.IsDir()
+// openDir is where /open puts files before opening them. It's per user,
+// because in a shared temp dir another local user could swap the file.
+func openDir() (string, error) {
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		return "", err
+	}
+	d := filepath.Join(cache, "mutter", "open")
+	return d, os.MkdirAll(d, 0o700)
 }
 
 // saveFile downloads an uploaded file into dir and returns its path.
@@ -95,10 +100,11 @@ func (c *client) saveFile(ctx context.Context, f file, dir string) (string, erro
 	return path, nil
 }
 
-// safeName keeps a sender-chosen name from escaping the target directory.
+// safeName keeps a sender-chosen name from escaping the target directory or
+// landing as a hidden dotfile.
 func safeName(name string) string {
-	name = filepath.Base(strings.ReplaceAll(name, `\`, "/"))
-	if name == "." || name == ".." || name == "/" || name == "" {
+	name = strings.TrimLeft(filepath.Base(strings.ReplaceAll(name, `\`, "/")), ".")
+	if name == "/" || name == "" {
 		return "attachment"
 	}
 	return name
