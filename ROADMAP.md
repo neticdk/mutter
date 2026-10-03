@@ -14,7 +14,7 @@ Built, but not yet seen working end to end.
 - [x] Editing messages that have cards or attachments
 - [x] Read state synced from other devices
 - [x] Creating a new DM with `/dm` through `spaces.setup`
-- [ ] Behavior on token expiry, network loss, Pub/Sub outages and API rate limits
+- [x] Behavior on token expiry, network loss, Pub/Sub outages and API rate limits
 
 ## 2. Daily driver
 
