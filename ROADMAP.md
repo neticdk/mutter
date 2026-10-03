@@ -30,7 +30,7 @@ Built, but not yet seen working end to end.
 - [x] **`/dm` by short name**: `/dm kn` tries `kn@` the user's own domain first, then a single known member whose address starts with `kn@`, and lists the candidates when several match. Tab completes names and addresses.
 - [x] **Multiline paste**: bracketed paste lands in the input whole and never sends a line early. Covered by a test.
 - [x] **Pasting images**: ctrl+v reads an image from the system clipboard with `golang.design/x/clipboard`, falling back to text paste. A dropped image path attaches the file. Pending images show before the status line and go out with the next message.
-- [ ] **Optional sidebar**: unread and recently active spaces, display only. alt+1…9 or a click jumps, search stays in ctrl+k. ctrl+b toggles, hidden below ~100 columns, off by default
+- [x] **Optional sidebar**: unread and recently active spaces, display only. alt+1…9, ctrl+1…9 or a click jumps, search stays in ctrl+k. ctrl+b toggles and is remembered, hidden below 100 columns, off by default.
 
 ## 3. Performance
 

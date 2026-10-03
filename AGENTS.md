@@ -19,6 +19,7 @@ Everything is one `main` package, split into files by concern:
 | `actions.go` | actions on a selected message: react, edit, delete, files |
 | `compose.go` | completion for @mentions, `/dm` and emoji, `/attach` |
 | `emoji.go` | emoji shortcodes: search, completion and expansion |
+| `sidebar.go` | the optional sidebar and saved preferences |
 | `paste.go` | images from the clipboard or dropped files, sent with the next message |
 | `nav.go` | older history, live spaces, `/dm`, sections |
 | `presence.go` | the user's own availability: `/dnd`, `/away`, `/active`, `/status` |

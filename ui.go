@@ -132,6 +132,9 @@ type model struct {
 
 	status string
 	width  int
+	height int
+
+	sidebarOn bool // the user's choice, see sidebarShown
 }
 
 func newModel(ctx context.Context, c *client, events <-chan tea.Msg) model {
@@ -149,7 +152,7 @@ func newModel(ctx context.Context, c *client, events <-chan tea.Msg) model {
 	f := textinput.New()
 	f.Prompt = "switch to: "
 
-	return model{ctx: ctx, c: c, events: events, focused: true, cur: -1, members: map[string][]member{}, mentions: map[string]string{}, drafts: loadDrafts(c.me), readTimes: loadReadTimes(c.me), mem: map[string]*cachedSpace{}, ta: ta, filter: f, vp: viewport.New(), imgs: newImages(), status: "loading spaces…"}
+	return model{ctx: ctx, c: c, events: events, focused: true, cur: -1, members: map[string][]member{}, mentions: map[string]string{}, drafts: loadDrafts(c.me), sidebarOn: loadPrefs().Sidebar, readTimes: loadReadTimes(c.me), mem: map[string]*cachedSpace{}, ta: ta, filter: f, vp: viewport.New(), imgs: newImages(), status: "loading spaces…"}
 }
 
 func (m model) Init() tea.Cmd {
@@ -218,13 +221,25 @@ func (m model) sendCmd(space, thread, text string, quote *chat.Message) tea.Cmd 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.ta.SetWidth(msg.Width - 2)
-		// header, input box with border, status line
-		m.vp.SetWidth(msg.Width)
-		m.vp.SetHeight(max(1, msg.Height-1-(m.ta.Height()+2)-1))
-		m.imgs.resize(msg.Width, m.vp.Height())
-		m.render()
+		m.width, m.height = msg.Width, msg.Height
+		m.layout()
+		return m, nil
+
+	case tea.MouseClickMsg:
+		if ms := msg.Mouse(); ms.Button == tea.MouseLeft {
+			if cmd, ok := m.sidebarClick(ms.X, ms.Y); ok {
+				return m, cmd
+			}
+		}
+		return m, nil
+
+	case tea.MouseWheelMsg:
+		switch msg.Mouse().Button {
+		case tea.MouseWheelUp:
+			m.vp.ScrollUp(3)
+		case tea.MouseWheelDown:
+			m.vp.ScrollDown(3)
+		}
 		return m, nil
 
 	case spacesMsg:
@@ -463,6 +478,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.switching {
 			return m.updateSwitcher(msg)
 		}
+		if msg.String() == "ctrl+b" {
+			m.sidebarOn = !m.sidebarOn
+			m.savePrefs()
+			m.layout()
+			return m, nil
+		}
+		if n := sidebarKey(msg.String()); n > 0 && m.sidebarShown() {
+			return m, m.jump(n)
+		}
 		if m.mode != "" {
 			return m.updateMode(msg)
 		}
@@ -668,8 +692,15 @@ func (m *model) refilter() {
 			m.matches = append(m.matches, i)
 		}
 	}
-	slices.SortStableFunc(m.matches, func(a, b int) int {
-		sa, sb := m.spaces[a], m.spaces[b]
+	sortSpaces(m.spaces, m.matches)
+	m.pick = max(0, slices.Index(m.matches, picked))
+}
+
+// sortSpaces orders indexes into spaces unread first, then by recent
+// activity, as the switcher and the sidebar show them.
+func sortSpaces(spaces []space, idx []int) {
+	slices.SortStableFunc(idx, func(a, b int) int {
+		sa, sb := spaces[a], spaces[b]
 		if sa.unread != sb.unread {
 			if sa.unread {
 				return -1
@@ -678,7 +709,6 @@ func (m *model) refilter() {
 		}
 		return strings.Compare(sb.lastActive, sa.lastActive)
 	})
-	m.pick = max(0, slices.Index(m.matches, picked))
 }
 
 // fuzzy reports whether pattern is a case-insensitive subsequence of s.
@@ -1029,7 +1059,7 @@ func newDot() string { return liveStyle.Render("● ") }
 // message renders msg's sender, time and body.
 func (m *model) message(msg *chat.Message, num *int) string {
 	name := senderName(msg)
-	body := lipgloss.NewStyle().Width(max(1, m.width-4)).Render(messageBody(msg, m.imgs.render, num))
+	body := lipgloss.NewStyle().Width(max(1, m.vp.Width()-4)).Render(messageBody(msg, m.imgs.render, num))
 	return senderStyle.Render(name) + " " + dimStyle.Render(when(msg.CreateTime)) + "\n" + body
 }
 
@@ -1083,8 +1113,11 @@ func (m model) View() tea.View {
 		hint = "enter reply · esc back · ↑/↓ scroll · ctrl+k switch · /open /save /unread · /quit"
 	}
 	body := m.vp.View()
-	if m.switching {
+	switch {
+	case m.switching:
 		body = m.switcherView()
+	case m.sidebarShown():
+		body = lipgloss.JoinHorizontal(lipgloss.Top, m.sidebarView(), body)
 	}
 	// A pending react or delete prompt beats notices, which beat the
 	// editing, quoting and selection hints.
@@ -1126,6 +1159,11 @@ func (m model) View() tea.View {
 	)))
 	v.AltScreen = true
 	v.ReportFocus = true
+	if m.sidebarShown() {
+		// Clicks reach the sidebar. Most terminals still select text with
+		// shift held.
+		v.MouseMode = tea.MouseModeCellMotion
+	}
 	return v
 }
 

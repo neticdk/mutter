@@ -182,6 +182,8 @@ To use a different OAuth client, for example during development, write it to `~/
 | shift+enter, alt+enter, ctrl+j | newline. Pasted text keeps its newlines and never sends early. |
 | ctrl+v | paste an image from the clipboard to send with the next message, or text when there's no image. cmd+v belongs to the terminal, which pastes text and file paths but never images. |
 | ctrl+x | remove the last image waiting to be sent |
+| ctrl+b | show or hide the sidebar of unread and recent spaces. It hides itself in windows narrower than 100 columns. |
+| alt+1…9, ctrl+1…9 | open a sidebar entry. alt needs option-as-alt on macOS, ctrl works without it. |
 | ctrl+k | switch space. The filter matches names and sidebar sections, and `✎` marks spaces with a draft. |
 | ↑ ↓ with an empty input | select a thread, or a message inside a thread |
 | ↑ on the oldest thread | load older history |
@@ -202,6 +204,8 @@ While a thread or message is selected, letter keys act on it. Any other key goes
 | `u` | mark the space unread from this message onward |
 | `o` | open its files |
 | `s` | save its files to `~/Downloads` |
+
+While the sidebar shows, clicking an entry opens it and the scroll wheel scrolls messages. The terminal then passes clicks to mutter, so select text with shift held.
 
 Dropping an image file on the terminal pastes its path, and mutter attaches the file in place of the path.
 
