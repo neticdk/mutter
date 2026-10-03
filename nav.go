@@ -227,3 +227,34 @@ func (m model) loadSections() tea.Msg {
 	}
 	return sectionsMsg(s)
 }
+
+// wantMessage reports whether a message event in space is worth fetching:
+// the space is open or cached, so the message shows, or it can go unread and
+// notify. Unknown spaces are fetched, since their first message adds them.
+// A muted space that's neither open nor cached only gets its last activity
+// updated.
+func (m *model) wantMessage(ref messageRef) bool {
+	space := spaceOf(ref.name)
+	i := m.spaceIndex(space)
+	switch {
+	case i < 0, i == m.cur, m.mem[space] != nil, !m.spaces[i].muted:
+		return true
+	}
+	if ref.at != "" {
+		m.spaces[i].lastActive = ref.at
+	}
+	return false
+}
+
+// fetchMessage gets a message named by an event and hands it on as a
+// messageEvent.
+func (m model) fetchMessage(ref messageRef) tea.Cmd {
+	return func() tea.Msg {
+		msg, err := m.c.svc.Spaces.Messages.Get(ref.name).Context(m.ctx).Do()
+		if err != nil {
+			slog.Warn("get message", "name", ref.name, "err", err)
+			return nil
+		}
+		return messageEvent{kind: ref.kind, name: ref.name, msg: msg}
+	}
+}

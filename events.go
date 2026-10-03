@@ -70,6 +70,13 @@ type (
 	// spaceChangedMsg reports a rename or membership change that can change
 	// the space's title.
 	spaceChangedMsg struct{ space string }
+	// messageRef names a new or changed message. The UI fetches it only
+	// when something will use it, see wantMessage.
+	messageRef struct {
+		kind string // kindCreated or kindUpdated
+		name string
+		at   string // event time, for the space's last activity
+	}
 	// readStateMsg reports that the user read space, possibly elsewhere.
 	readStateMsg struct{ space, lastRead string }
 	liveMsg      struct{ err error }
@@ -343,14 +350,11 @@ func (e *events) handle(ctx context.Context, m *pubsub.PubsubMessage) error {
 		}
 		kind := messageKind(typ)
 		for _, n := range names {
-			ev := messageEvent{kind: kind, name: n}
-			if kind != kindDeleted {
-				if ev.msg, err = e.c.svc.Spaces.Messages.Get(n).Context(ctx).Do(); err != nil {
-					slog.Warn("get message", "name", n, "err", err)
-					continue
-				}
+			if kind == kindDeleted {
+				e.out <- messageEvent{kind: kind, name: n}
+				continue
 			}
-			e.out <- ev
+			e.out <- messageRef{kind: kind, name: n, at: m.Attributes["ce-time"]}
 		}
 	case strings.Contains(typ, ".reaction.v1."):
 		// A reaction changes its message's summary, so refetch the message.
@@ -363,12 +367,7 @@ func (e *events) handle(ctx context.Context, m *pubsub.PubsubMessage) error {
 		}
 		for _, n := range names {
 			msgName, _, _ := strings.Cut(n, "/reactions/")
-			msg, err := e.c.svc.Spaces.Messages.Get(msgName).Context(ctx).Do()
-			if err != nil {
-				slog.Warn("get message", "name", msgName, "err", err)
-				continue
-			}
-			e.out <- messageEvent{kind: kindUpdated, name: msgName, msg: msg}
+			e.out <- messageRef{kind: kindUpdated, name: msgName}
 		}
 	case strings.Contains(typ, ".spaceReadState.v1."):
 		if d.SpaceReadState == nil {

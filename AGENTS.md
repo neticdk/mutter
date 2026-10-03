@@ -24,6 +24,7 @@ Everything is one `main` package, split into files by concern:
 | `nav.go` | older history, live spaces, `/dm`, sections |
 | `presence.go` | the user's own availability: `/dnd`, `/away`, `/active`, `/status` |
 | `drafts.go` | unsent input per space and thread, kept in the cache directory |
+| `rendercache.go` | rendered messages and styled blocks kept between renders |
 | `cache.go` | spaces kept in memory and followed by live events, snapshots on disk |
 | `store.go` | the encrypted on-disk cache for spaces and images |
 | `attach.go` | downloading, saving and opening files |
@@ -38,7 +39,7 @@ Add a package only when a second consumer needs the code.
 ## Commands
 
 - `just check` runs what CI runs: format check, golangci-lint, gosec, govulncheck and the tests.
-- `just fmt` formats, `just fix` runs `go fix`.
+- `just fmt` formats, `just fix` runs `go fix`, `just bench` runs the benchmarks.
 - `just` lists every recipe.
 
 Run `just check` before committing.

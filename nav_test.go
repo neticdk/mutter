@@ -92,3 +92,29 @@ func TestCompleteCycles(t *testing.T) {
 		t.Errorf("/dm completion: %q", m.ta.Value())
 	}
 }
+
+func TestWantMessage(t *testing.T) {
+	m := newModel(context.Background(), &client{}, nil)
+	m.spaces = []space{
+		{name: "spaces/open"},
+		{name: "spaces/muted", muted: true, lastActive: "2026-01-01T00:00:00Z"},
+		{name: "spaces/mutedCached", muted: true},
+		{name: "spaces/normal"},
+	}
+	m.cur = 0
+	m.mem["spaces/mutedCached"] = &cachedSpace{}
+	for name, want := range map[string]bool{
+		"spaces/open/messages/1":        true,
+		"spaces/normal/messages/1":      true,
+		"spaces/mutedCached/messages/1": true,
+		"spaces/unknown/messages/1":     true,
+		"spaces/muted/messages/1":       false,
+	} {
+		if got := m.wantMessage(messageRef{kind: kindCreated, name: name, at: "2026-10-03T12:00:00Z"}); got != want {
+			t.Errorf("%s: got %v", name, got)
+		}
+	}
+	if m.spaces[1].lastActive != "2026-10-03T12:00:00Z" {
+		t.Error("a skipped message didn't move the muted space's last activity")
+	}
+}

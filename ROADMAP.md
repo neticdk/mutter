@@ -42,8 +42,8 @@ Measure with the API call counts in `mutter.log` at `MUTTER_LOG_LEVEL=debug` bef
 - [x] Keep loaded spaces in memory and update them from live events, so switching back costs no fetch
 - [x] Cache processed images on disk, so restarts don't download them again
 - [x] Keep thread read times in the disk snapshot and skip the lookup for threads with no activity since
-- [ ] Cache rendered messages per width, so cursor moves don't reformat every message
-- [ ] Skip `messages.get` for events in muted spaces that aren't open
+- [x] Cache rendered messages and styled blocks, so a cursor move in a 200-thread space takes about 1 ms, down from 13 ms (`just bench`)
+- [x] Skip `messages.get` for events in muted spaces that aren't open or cached
 
 ## 4. Logging
 

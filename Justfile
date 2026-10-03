@@ -38,6 +38,10 @@ fmt-check:
 fix:
     go fix ./...
 
+# Run the benchmarks, such as rendering a 200-thread space.
+bench:
+    go test -run '^$' -bench . -benchmem ./...
+
 # Print total test coverage, and write per-line coverage to coverage.html.
 cover:
     go test -coverprofile=coverage.out ./...

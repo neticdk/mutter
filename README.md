@@ -314,6 +314,7 @@ Needs Go, [just](https://github.com/casey/just) and golangci-lint. gosec and gov
 | `just run ARGS` | build and run |
 | `just fmt` | format with gofumpt and goimports |
 | `just fix` | modernize the code with `go fix` |
+| `just bench` | run the benchmarks, such as rendering a 200-thread space |
 | `just snapshot` | build all release targets into `dist/` |
 
 `just` alone lists every recipe.

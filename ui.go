@@ -80,6 +80,7 @@ type model struct {
 	inThread *thread   // thread view when set
 
 	imgs         *images
+	rc           *renderCache
 	titles       map[string]string // title cache, see titleCache
 	titleChecked map[string]int64  // when each cached title was looked up
 	readTimes    map[string]string // see readTimesFile
@@ -152,7 +153,7 @@ func newModel(ctx context.Context, c *client, events <-chan tea.Msg) model {
 	f := textinput.New()
 	f.Prompt = "switch to: "
 
-	return model{ctx: ctx, c: c, events: events, focused: true, cur: -1, members: map[string][]member{}, mentions: map[string]string{}, drafts: loadDrafts(c.me), sidebarOn: loadPrefs().Sidebar, readTimes: loadReadTimes(c.me), mem: map[string]*cachedSpace{}, ta: ta, filter: f, vp: viewport.New(), imgs: newImages(), status: "loading spaces…"}
+	return model{ctx: ctx, c: c, events: events, focused: true, cur: -1, members: map[string][]member{}, mentions: map[string]string{}, drafts: loadDrafts(c.me), sidebarOn: loadPrefs().Sidebar, readTimes: loadReadTimes(c.me), mem: map[string]*cachedSpace{}, ta: ta, filter: f, vp: viewport.New(), imgs: newImages(), rc: newRenderCache(), status: "loading spaces…"}
 }
 
 func (m model) Init() tea.Cmd {
@@ -394,6 +395,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if seq == "" {
 			return m, nil
 		}
+		m.rc.clear() // messages showing a text placeholder now show the image
 		m.render()
 		return m, tea.Batch(tea.Raw(seq), anim)
 
@@ -418,6 +420,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.live, m.liveErr = msg.err == nil, msg.err
 		return m, nil
+
+	case messageRef:
+		if !m.wantMessage(msg) {
+			slog.Debug("skipped message", "name", msg.name)
+			return m, nil
+		}
+		return m, m.fetchMessage(msg)
 
 	case messageEvent:
 		m.applyCached(msg)
@@ -986,6 +995,7 @@ func (m *model) remove(name string) {
 
 func (m *model) render() {
 	m.imgs.hideAll()
+	m.rc.check(m.vp.Width())
 	if t := m.inThread; t != nil {
 		blocks := make([]string, 0, len(t.msgs))
 		num := 0
@@ -1028,19 +1038,18 @@ func (m *model) render() {
 // setBlocks shows blocks with the one at sel highlighted and scrolled into
 // view. sel -1 highlights nothing.
 func (m *model) setBlocks(blocks []string, sel int) {
-	top, bottom := 0, 0
+	top, bottom, line := 0, 0, 0
 	for i, b := range blocks {
-		if i != sel {
-			blocks[i] = threadStyle.Render(b)
-			continue
+		style := plainBlock
+		if i == sel {
+			style = selectedBlock
 		}
-		blocks[i] = cursorStyle.Render(b)
-		if i > 0 {
-			// lipgloss.Height counts "" as one line, so the first block is
-			// left at 0. The +1 is the blank separator line.
-			top = lipgloss.Height(strings.Join(blocks[:i], "\n\n")) + 1
+		blocks[i] = m.style(b, style)
+		h := height(blocks[i])
+		if i == sel {
+			top, bottom = line, line+h
 		}
-		bottom = top + lipgloss.Height(blocks[i])
+		line += h + 1 // the blank separator line
 	}
 	m.vp.SetContent(strings.Join(blocks, "\n\n"))
 	if sel < 0 {
@@ -1057,10 +1066,32 @@ func (m *model) setBlocks(blocks []string, sel int) {
 func newDot() string { return liveStyle.Render("● ") }
 
 // message renders msg's sender, time and body.
+//
+// Renders are cached by message and starting attachment number. Images mark
+// themselves visible when rendered, which keeps GIFs animating, so a cache
+// hit marks them again.
 func (m *model) message(msg *chat.Message, num *int) string {
-	name := senderName(msg)
-	body := lipgloss.NewStyle().Width(max(1, m.vp.Width()-4)).Render(messageBody(msg, m.imgs.render, num))
-	return senderStyle.Render(name) + " " + dimStyle.Render(when(msg.CreateTime)) + "\n" + body
+	k := msgKey{msg, *num}
+	if r, ok := m.rc.msgs[k]; ok {
+		*num += r.files
+		for _, ref := range r.refs {
+			m.imgs.render(ref)
+		}
+		return r.text
+	}
+	start := *num
+	var refs []string
+	img := func(ref string) string {
+		s := m.imgs.render(ref)
+		if s != "" {
+			refs = append(refs, ref)
+		}
+		return s
+	}
+	body := lipgloss.NewStyle().Width(max(1, m.vp.Width()-4)).Render(messageBody(msg, img, num))
+	text := senderStyle.Render(senderName(msg)) + " " + dimStyle.Render(when(msg.CreateTime)) + "\n" + body
+	m.rc.msgs[k] = rendered{text: text, files: *num - start, refs: refs}
+	return text
 }
 
 func plural(n int, one, many string) string {
