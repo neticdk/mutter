@@ -914,9 +914,9 @@ func (m *model) setThread(t *thread) {
 	m.render()
 }
 
-// add files msg under its thread. A new thread goes to the bottom, and the
-// cursor follows it only if it was already on the last thread. Messages from
-// others count as new for the unseen markers.
+// add files msg under its thread. A new thread goes to the bottom. The
+// cursor follows it when it's our own, or when the cursor was already on the
+// last thread. Messages from others count as new for the unseen markers.
 func (m *model) add(msg *chat.Message) {
 	fromOthers := !m.own(msg)
 	if m.cur < 0 || !strings.HasPrefix(msg.Name, m.spaces[m.cur].name+"/") {
@@ -940,9 +940,10 @@ func (m *model) add(msg *chat.Message) {
 		atBottom := m.cursor == len(m.threads)-1
 		m.threads = append(m.threads, &thread{name: name, msgs: []*chat.Message{msg}, rootNew: fromOthers})
 		switch {
-		case atBottom:
+		case atBottom, !fromOthers:
+			// A thread of our own takes the cursor, so it can be acted on.
 			m.cursor = len(m.threads) - 1
-		case fromOthers:
+		default:
 			m.newBelow++
 		}
 	}
