@@ -25,6 +25,7 @@ Built, but not yet seen working end to end.
 - [x] **Open links in messages**: `l` on the selected message, picking with `1`–`9` when there are several
 - [x] **Code blocks**: fenced blocks get a left bar and start on their own line. Inline code stays cyan. No syntax highlighting.
 - [x] **Emoji**: `:shortcode:` completion with tab, complete codes expanded on send, and a reaction picker that searches all emoji
+- [x] **Custom emoji**: the organization's custom emoji in `:` completion and the `r` search, sent as `<customEmojis/ID>`, and shown as images in reactions and messages, animated when they're GIFs
 - [ ] **Configuration**: key bindings and a light theme from a config file
 - [x] **Cycling @mention suggestions**: tab moves through the suggestions shown, shift+tab back.
 - [x] **`/dm` by short name**: `/dm kn` tries `kn@` the user's own domain first, then a single known member whose address starts with `kn@`, and lists the candidates when several match. Tab completes names and addresses.

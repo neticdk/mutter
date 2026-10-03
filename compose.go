@@ -164,7 +164,13 @@ func (m *model) suggestions() ([]suggestion, int) {
 			out = append(out, suggestion{label: "@" + p.name, insert: "@" + p.name + " ", mention: "@" + p.name, token: "<" + p.id + ">"})
 		}
 	case completeEmoji:
-		for _, e := range suggestEmoji(q) {
+		for _, e := range m.reactResults(q) {
+			if e.uid != "" {
+				// The input keeps the readable code, and the send expands it.
+				char := cmp.Or(m.imgs.render(emojiRef(e.uid)), "✱")
+				out = append(out, suggestion{label: char + " " + dimStyle.Render(e.code), insert: ":" + e.code + ": "})
+				continue
+			}
 			out = append(out, suggestion{label: e.char + " " + dimStyle.Render(e.code), insert: e.char + " "})
 		}
 	}

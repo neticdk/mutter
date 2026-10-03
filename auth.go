@@ -35,6 +35,7 @@ var scopes = []string{
 	chat.ChatUsersSectionsReadonlyScope,
 	chat.ChatUsersAvailabilityScope,
 	chat.ChatSpacesCreateScope,
+	chat.ChatCustomemojisReadonlyScope,
 	pubsub.PubsubScope,
 }
 

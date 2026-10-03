@@ -29,8 +29,11 @@ var quickReactions = []string{"👍", "❤️", "😂", "🎉", "👀", "✅"}
 
 // toggleReaction adds emoji to the message as the user, or removes it when
 // the user already reacted with it, and returns the updated message.
-func (c *client) toggleReaction(ctx context.Context, msg, emoji string) (*chat.Message, error) {
-	filter := fmt.Sprintf(`emoji.unicode = %q AND user.name = %q`, emoji, c.meID)
+func (c *client) toggleReaction(ctx context.Context, msg string, emoji *chat.Emoji) (*chat.Message, error) {
+	filter := fmt.Sprintf(`emoji.unicode = %q AND user.name = %q`, emoji.Unicode, c.meID)
+	if emoji.CustomEmoji != nil {
+		filter = fmt.Sprintf(`emoji.custom_emoji.uid = %q AND user.name = %q`, emoji.CustomEmoji.Uid, c.meID)
+	}
 	r, err := c.svc.Spaces.Messages.Reactions.List(msg).Filter(filter).Context(ctx).Do()
 	if err != nil {
 		return nil, err
@@ -42,7 +45,12 @@ func (c *client) toggleReaction(ctx context.Context, msg, emoji string) (*chat.M
 			}
 		}
 	} else {
-		_, err := c.svc.Spaces.Messages.Reactions.Create(msg, &chat.Reaction{Emoji: &chat.Emoji{Unicode: emoji}}).Context(ctx).Do()
+		// The UID is output only, so a custom emoji goes out by resource name.
+		create := emoji
+		if emoji.CustomEmoji != nil {
+			create = &chat.Emoji{CustomEmoji: &chat.CustomEmoji{Name: emoji.CustomEmoji.Name}}
+		}
+		_, err := c.svc.Spaces.Messages.Reactions.Create(msg, &chat.Reaction{Emoji: create}).Context(ctx).Do()
 		if err != nil {
 			return nil, err
 		}
@@ -100,7 +108,7 @@ func (m *model) action(k string) (cmd tea.Cmd, ok bool) {
 			return nil, true
 		}
 		m.editing, m.selecting = sel, false
-		m.ta.SetValue(sel.Text)
+		m.ta.SetValue(customEmojiNames(sel))
 		m.render()
 	case "q":
 		m.quoting, m.selecting = sel, false
@@ -178,16 +186,16 @@ func (m model) updateReact(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	k := msg.String()
 	var results []emojiEntry
 	if m.reactQuery != "" {
-		results = suggestEmoji(m.reactQuery)
+		results = m.reactResults(m.reactQuery)
 	}
 	switch {
 	case k == keyEsc:
 	case m.reactQuery == "" && len(k) == 1 && k >= "1" && k <= "9":
 		if n := int(k[0] - '0'); n <= len(quickReactions) {
-			return m.react(quickReactions[n-1])
+			return m.react(&chat.Emoji{Unicode: quickReactions[n-1]})
 		}
 	case k == keyEnter && len(results) > 0:
-		return m.react(results[min(m.reactIdx, len(results)-1)].char)
+		return m.react(results[min(m.reactIdx, len(results)-1)].emoji())
 	case k == "backspace":
 		m.reactQuery = m.reactQuery[:max(0, len(m.reactQuery)-1)]
 		m.reactIdx = 0
@@ -198,14 +206,20 @@ func (m model) updateReact(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case msg.Text != "" && strings.IndexFunc(msg.Text, func(r rune) bool { return !isCodeRune(r) }) < 0:
 		m.reactQuery += strings.ToLower(msg.Text)
 		m.reactIdx = 0
-		return m, nil
+		var cmds []tea.Cmd
+		for _, e := range m.reactResults(m.reactQuery) {
+			if e.uid != "" {
+				cmds = append(cmds, m.imgs.fetchEmoji(m.ctx, &chat.CustomEmoji{Uid: e.uid}))
+			}
+		}
+		return m, tea.Batch(cmds...)
 	}
 	m.mode, m.reactQuery = "", ""
 	return m, nil
 }
 
 // react toggles emoji on the selected message and closes the picker.
-func (m model) react(emoji string) (tea.Model, tea.Cmd) {
+func (m model) react(emoji *chat.Emoji) (tea.Model, tea.Cmd) {
 	m.mode, m.reactQuery = "", ""
 	sel := m.selected()
 	if sel == nil {
@@ -405,15 +419,16 @@ func shortURL(u string) string {
 }
 
 // reactions renders a message's reaction summary, such as "👍 3  🎉 1".
-func reactions(msg *chat.Message) string {
+// Custom emoji show their image once img has it, and :name: until then.
+func reactions(msg *chat.Message, img func(ref string) string) string {
 	var parts []string
 	for _, r := range msg.EmojiReactionSummaries {
 		if r.Emoji == nil {
 			continue
 		}
 		e := r.Emoji.Unicode
-		if e == "" && r.Emoji.CustomEmoji != nil {
-			e = ":" + cmp.Or(r.Emoji.CustomEmoji.EmojiName, "custom") + ":"
+		if c := r.Emoji.CustomEmoji; e == "" && c != nil {
+			e = cmp.Or(img(emojiRef(c.Uid)), ":"+customName(c)+":")
 		}
 		parts = append(parts, e+" "+dimStyle.Render(fmt.Sprint(r.ReactionCount)))
 	}
@@ -424,10 +439,14 @@ func reactions(msg *chat.Message) string {
 func (m *model) modeHint() string {
 	switch {
 	case m.mode == modeReact && m.reactQuery != "":
-		results := suggestEmoji(m.reactQuery)
+		results := m.reactResults(m.reactQuery)
 		picks := make([]string, 0, len(results))
 		for i, e := range results {
-			p := e.char + " " + e.code
+			char := e.char
+			if e.uid != "" {
+				char = cmp.Or(m.imgs.render(emojiRef(e.uid)), "✱")
+			}
+			p := char + " " + e.code
 			if i == m.reactIdx {
 				p = boldStyle.Render(p)
 			}

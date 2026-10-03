@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"html"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
+	"unicode/utf16"
 
 	"charm.land/lipgloss/v2"
 	"google.golang.org/api/chat/v1"
@@ -104,6 +106,48 @@ func formatInline(s string) string {
 	return s
 }
 
+// customEmojiNames returns m's text with each custom emoji, which the API
+// sends as one placeholder character, spelled out as :name:. Annotation
+// indexes count UTF-16 code units.
+func customEmojiNames(m *chat.Message) string {
+	var anns []*chat.Annotation
+	for _, a := range m.Annotations {
+		if a.CustomEmojiMetadata != nil && a.CustomEmojiMetadata.CustomEmoji != nil {
+			anns = append(anns, a)
+		}
+	}
+	if len(anns) == 0 {
+		return m.Text
+	}
+	// Splicing from the end keeps the earlier indexes valid.
+	slices.SortFunc(anns, func(a, b *chat.Annotation) int { return cmp.Compare(b.StartIndex, a.StartIndex) })
+	u := utf16.Encode([]rune(m.Text))
+	for _, a := range anns {
+		start, end := a.StartIndex, a.StartIndex+a.Length
+		if start < 0 || end > int64(len(u)) || start >= end {
+			continue
+		}
+		name := utf16.Encode([]rune(":" + customName(a.CustomEmojiMetadata.CustomEmoji) + ":"))
+		u = slices.Concat(u[:start], name, u[end:])
+	}
+	return string(utf16.Decode(u))
+}
+
+// customEmojiText swaps each annotated custom emoji's :name: in text for
+// its image, once img has it.
+func customEmojiText(m *chat.Message, text string, img func(ref string) string) string {
+	for _, a := range m.Annotations {
+		if a.CustomEmojiMetadata == nil || a.CustomEmojiMetadata.CustomEmoji == nil {
+			continue
+		}
+		c := a.CustomEmojiMetadata.CustomEmoji
+		if s := img(emojiRef(c.Uid)); s != "" {
+			text = strings.ReplaceAll(text, ":"+customName(c)+":", s)
+		}
+	}
+	return text
+}
+
 // messageBody renders text, cards, attachments and GIFs. img renders the
 // image with the given ref, or returns "" to fall back to a text placeholder.
 // num counts files across a thread, numbering them in filesOf order for
@@ -114,7 +158,7 @@ func messageBody(m *chat.Message, img func(ref string) string, num *int) string 
 		parts = append(parts, quote(q))
 	}
 	if m.Text != "" {
-		parts = append(parts, formatText(m.Text))
+		parts = append(parts, customEmojiText(m, formatText(customEmojiNames(m)), img))
 	}
 	for _, c := range m.CardsV2 {
 		if c.Card != nil {
@@ -139,7 +183,7 @@ func messageBody(m *chat.Message, img func(ref string) string, num *int) string 
 		}
 		parts = append(parts, dimStyle.Render(fmt.Sprintf("[%d · gif]", *num)))
 	}
-	if r := reactions(m); r != "" {
+	if r := reactions(m, img); r != "" {
 		parts = append(parts, r)
 	}
 	return strings.Join(parts, "\n")

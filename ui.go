@@ -97,13 +97,14 @@ type model struct {
 	// Message actions. selecting means arrows picked a message, so letter
 	// keys act on it.
 	selecting  bool
-	msgCursor  int           // selected message in the thread view
-	mode       string        // modeReact, modeDelete or modeLink while waiting for the next key
-	links      []string      // what the link prompt offers
-	reactQuery string        // emoji search in the reaction picker
-	reactIdx   int           // highlighted search result
-	editing    *chat.Message // message whose text is in the input
-	quoting    *chat.Message // message the next send quotes
+	msgCursor  int                 // selected message in the thread view
+	mode       string              // modeReact, modeDelete or modeLink while waiting for the next key
+	links      []string            // what the link prompt offers
+	reactQuery string              // emoji search in the reaction picker
+	reactIdx   int                 // highlighted search result
+	custom     []*chat.CustomEmoji // the organization's custom emoji, for the picker
+	editing    *chat.Message       // message whose text is in the input
+	quoting    *chat.Message       // message the next send quotes
 
 	olderToken   string // page token for history before the oldest thread
 	openRead     string // the open space's read state before it opened
@@ -157,7 +158,7 @@ func newModel(ctx context.Context, c *client, events <-chan tea.Msg) model {
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(m.loadSpaces, m.waitEvent, m.loadPresence, tea.Raw(kittyClear))
+	return tea.Batch(m.loadSpaces, m.waitEvent, m.loadPresence, m.loadCustomEmoji, tea.Raw(kittyClear))
 }
 
 func (m model) waitEvent() tea.Msg {
@@ -343,6 +344,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case presenceMsg:
 		m.presence = msg.a
 		return m, nil
+
+	case customEmojiMsg:
+		m.custom = msg
+		for _, e := range msg {
+			if e.TemporaryImageUri != "" {
+				m.imgs.emoji[e.Uid] = e.TemporaryImageUri
+			}
+		}
+		// Reactions already shown can now load their images.
+		shown := rootsOf(m.threads)
+		if m.inThread != nil {
+			shown = append(shown, m.inThread.msgs...)
+		}
+		return m, m.imgs.fetch(m.ctx, m.c, shown)
 
 	case tea.BlurMsg:
 		m.focused = false
@@ -634,7 +649,7 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	if m.cur < 0 {
 		return m, nil
 	}
-	text = expandShortcodes(expandMentions(text, m.mentions))
+	text = expandShortcodes(expandMentions(text, m.mentions), m.custom)
 	clear(m.mentions)
 	if e := m.editing; e != nil {
 		m.editing = nil
@@ -789,7 +804,7 @@ func (m *model) attachCmd(cmd string) tea.Cmd {
 	if m.inThread != nil {
 		thread = m.inThread.name
 	}
-	text = expandShortcodes(expandMentions(text, m.mentions))
+	text = expandShortcodes(expandMentions(text, m.mentions), m.custom)
 	clear(m.mentions)
 	m.notice = "uploading " + filepath.Base(path) + "…"
 	return func() tea.Msg {

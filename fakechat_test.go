@@ -32,6 +32,17 @@ type fakeChat struct {
 
 const fakeMe = "users/me1"
 
+// fakeParrot is the organization's one custom emoji.
+var fakeParrot = &chat.CustomEmoji{Name: "customEmojis/ce1", Uid: "ce1", EmojiName: ":partyparrot:"}
+
+// emojiKey tells reactions apart, custom ones by UID.
+func emojiKey(e *chat.Emoji) string {
+	if e.CustomEmoji != nil {
+		return "custom:" + e.CustomEmoji.Uid
+	}
+	return e.Unicode
+}
+
 func newFakeChat(t testing.TB) *fakeChat {
 	return &fakeChat{t: t, msgs: map[string][]*chat.Message{}, reacts: map[string][]*chat.Reaction{}, clock: time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)}
 }
@@ -106,7 +117,7 @@ func (f *fakeChat) withReactions(msg *chat.Message) *chat.Message {
 	out := *msg
 	out.EmojiReactionSummaries = nil
 	for _, r := range f.reacts[msg.Name] {
-		i := slices.IndexFunc(out.EmojiReactionSummaries, func(s *chat.EmojiReactionSummary) bool { return s.Emoji.Unicode == r.Emoji.Unicode })
+		i := slices.IndexFunc(out.EmojiReactionSummaries, func(s *chat.EmojiReactionSummary) bool { return emojiKey(s.Emoji) == emojiKey(r.Emoji) })
 		if i < 0 {
 			out.EmojiReactionSummaries = append(out.EmojiReactionSummaries, &chat.EmojiReactionSummary{Emoji: r.Emoji})
 			i = len(out.EmojiReactionSummaries) - 1
@@ -119,6 +130,7 @@ func (f *fakeChat) withReactions(msg *chat.Message) *chat.Message {
 var (
 	threadFilter = regexp.MustCompile(`thread\.name = (\S+)`)
 	emojiFilter  = regexp.MustCompile(`emoji\.unicode = "([^"]+)"`)
+	customFilter = regexp.MustCompile(`emoji\.custom_emoji\.uid = "([^"]+)"`)
 )
 
 func (f *fakeChat) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -139,6 +151,8 @@ func (f *fakeChat) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch {
+	case r.Method == http.MethodGet && path == "customEmojis":
+		reply(chat.ListCustomEmojisResponse{CustomEmojis: []*chat.CustomEmoji{fakeParrot}})
 	case r.Method == http.MethodGet && path == "spaces":
 		reply(chat.ListSpacesResponse{Spaces: f.spaces})
 	case r.Method == http.MethodGet && len(seg) == 3 && seg[0] == "spaces" && seg[2] == "members":
@@ -192,11 +206,15 @@ func (f *fakeChat) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			var out []*chat.Reaction
+			want := ""
 			if m := emojiFilter.FindStringSubmatch(r.URL.Query().Get("filter")); m != nil {
-				for _, x := range f.reacts[msgName] {
-					if x.Emoji.Unicode == m[1] && x.User.Name == fakeMe {
-						out = append(out, x)
-					}
+				want = m[1]
+			} else if m := customFilter.FindStringSubmatch(r.URL.Query().Get("filter")); m != nil {
+				want = "custom:" + m[1]
+			}
+			for _, x := range f.reacts[msgName] {
+				if want != "" && emojiKey(x.Emoji) == want && x.User.Name == fakeMe {
+					out = append(out, x)
 				}
 			}
 			reply(chat.ListReactionsResponse{Reactions: out})
@@ -204,6 +222,14 @@ func (f *fakeChat) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			var in chat.Reaction
 			decode(&in)
 			f.nextID++
+			if c := in.Emoji.CustomEmoji; c != nil {
+				// The API rejects a custom emoji without its resource name.
+				if c.Uid != "" || c.Name != fakeParrot.Name {
+					http.Error(w, "invalid custom emoji", http.StatusBadRequest)
+					return
+				}
+				in.Emoji.CustomEmoji = fakeParrot
+			}
 			in.Name = fmt.Sprintf("%s/reactions/r%d", msgName, f.nextID)
 			in.User = &chat.User{Name: fakeMe}
 			f.reacts[msgName] = append(f.reacts[msgName], &in)

@@ -47,8 +47,19 @@ func TestEmojiQuery(t *testing.T) {
 }
 
 func TestExpandShortcodes(t *testing.T) {
-	if got := expandShortcodes("ship it :tada: at 12:30:00 :nope:"); got != "ship it 🎉 at 12:30:00 :nope:" {
-		t.Errorf("expandShortcodes = %q", got)
+	custom := []*chat.CustomEmoji{
+		{Name: "customEmojis/8473b500", EmojiName: ":party-parrot:"},
+		{EmojiName: ":no-name:"}, // without a resource name it stays text
+	}
+	for _, tc := range []struct{ in, want string }{
+		{"ship it :tada: at 12:30:00 :nope:", "ship it 🎉 at 12:30:00 :nope:"},
+		{"ship it :party-parrot:", "ship it <customEmojis/8473b500>"},
+		{"ship it :Party-Parrot:", "ship it <customEmojis/8473b500>"},
+		{":no-name:", ":no-name:"},
+	} {
+		if got := expandShortcodes(tc.in, custom); got != tc.want {
+			t.Errorf("expandShortcodes(%q) = %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }
 

@@ -2,13 +2,16 @@ package main
 
 import (
 	"cmp"
+	"log/slog"
 	"regexp"
 	"slices"
 	"strings"
 	"sync"
 	"unicode"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/kyokomi/emoji/v2"
+	"google.golang.org/api/chat/v1"
 )
 
 // maxEmojiSuggestions is how many emoji the status line offers.
@@ -17,6 +20,8 @@ const maxEmojiSuggestions = 6
 type emojiEntry struct {
 	code string // without colons, such as thumbsup
 	char string
+	uid  string // set for custom emoji, which have no char
+	name string // a custom emoji's resource name, which creating a reaction takes
 }
 
 // emojiList is every code but skin tone variants, which would crowd the
@@ -92,13 +97,70 @@ func isCodeRune(r rune) bool {
 var shortcode = regexp.MustCompile(`:[a-zA-Z0-9_+\-]+:`)
 
 // expandShortcodes turns complete :codes: into emoji, as the web client does.
-// Unknown codes stay as typed.
-func expandShortcodes(text string) string {
+// A code naming one of custom becomes <customEmojis/ID>, which the API turns
+// into the custom emoji. Unknown codes stay as typed.
+func expandShortcodes(text string, custom []*chat.CustomEmoji) string {
 	codes := emoji.CodeMap()
 	return shortcode.ReplaceAllStringFunc(text, func(c string) string {
 		if e, ok := codes[strings.ToLower(c)]; ok {
 			return e
 		}
+		for _, e := range custom {
+			if strings.EqualFold(c, ":"+customName(e)+":") && e.Name != "" {
+				return "<" + e.Name + ">"
+			}
+		}
 		return c
 	})
+}
+
+type customEmojiMsg []*chat.CustomEmoji
+
+// loadCustomEmoji lists the organization's custom emoji. They only add to
+// the picker, so a failure is logged, not shown.
+func (m model) loadCustomEmoji() tea.Msg {
+	var out []*chat.CustomEmoji
+	err := m.c.svc.CustomEmojis.List().PageSize(200).Pages(m.ctx, func(r *chat.ListCustomEmojisResponse) error {
+		out = append(out, r.CustomEmojis...)
+		return nil
+	})
+	if err != nil {
+		slog.Warn("custom emoji", "err", err)
+		return nil
+	}
+	slog.Debug("custom emoji", "count", len(out))
+	traceJSON("customEmojis", out)
+	return customEmojiMsg(out)
+}
+
+// customName is a custom emoji's name without the colons the API wraps it
+// in.
+func customName(e *chat.CustomEmoji) string {
+	return strings.Trim(cmp.Or(e.EmojiName, "custom"), ":")
+}
+
+// reactResults are the picker's matches for q: custom emoji whose name
+// starts with q, then Unicode emoji.
+func (m *model) reactResults(q string) []emojiEntry {
+	var out []emojiEntry
+	for _, e := range m.custom {
+		if name := customName(e); strings.HasPrefix(name, q) && len(out) < maxEmojiSuggestions/2 {
+			out = append(out, emojiEntry{code: name, uid: e.Uid, name: e.Name})
+		}
+	}
+	for _, e := range suggestEmoji(q) {
+		if len(out) == maxEmojiSuggestions {
+			break
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+// emoji is the reaction emoji for a picker entry.
+func (e emojiEntry) emoji() *chat.Emoji {
+	if e.uid != "" {
+		return &chat.Emoji{CustomEmoji: &chat.CustomEmoji{Uid: e.uid, Name: e.name}}
+	}
+	return &chat.Emoji{Unicode: e.char}
 }

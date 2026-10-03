@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -47,6 +48,7 @@ type images struct {
 	nextID  int
 	byRef   map[string]*img
 	byID    map[int]*img
+	emoji   map[string]string // custom emoji image URLs by UID
 }
 
 // layout is the room images get, captured when a download starts.
@@ -81,7 +83,7 @@ func newImages() *images {
 	enabled := os.Getenv("TERM_PROGRAM") == "ghostty" || os.Getenv("TERM") == "xterm-kitty" || os.Getenv("KITTY_WINDOW_ID") != ""
 	// #nosec G706 -- %q escapes the values, and they're the user's own environment
 	slog.Debug("images", "enabled", enabled, "term", os.Getenv("TERM"), "termProgram", os.Getenv("TERM_PROGRAM"), "termVersion", os.Getenv("TERM_PROGRAM_VERSION"))
-	return &images{enabled: enabled, layout: layout{8, 16, maxImageCols, 20}, byRef: map[string]*img{}, byID: map[int]*img{}}
+	return &images{enabled: enabled, layout: layout{8, 16, maxImageCols, 20}, byRef: map[string]*img{}, byID: map[int]*img{}, emoji: map[string]string{}}
 }
 
 // resize records the message area's size, in cells, for later downloads.
@@ -111,31 +113,61 @@ func (im *images) fetch(ctx context.Context, c *client, msgs []*chat.Message) te
 		return nil
 	}
 	var cmds []tea.Cmd
-	get := func(ref string, do func() (*http.Response, error)) {
+	get := func(ref string, lay layout, do func() (*http.Response, error)) {
 		if ref == "" || im.byRef[ref] != nil {
 			return
 		}
 		im.byRef[ref] = &img{}
-		lay := im.layout
 		st := im.store
 		cmds = append(cmds, func() tea.Msg { return cachedDownload(st, ref, do, lay) })
 	}
 	for _, m := range msgs {
 		for _, a := range m.Attachment {
 			ref := imageRef(a)
-			get(ref, func() (*http.Response, error) { return c.svc.Media.Download(ref).Context(ctx).Download() })
+			get(ref, im.layout, func() (*http.Response, error) { return c.svc.Media.Download(ref).Context(ctx).Download() })
 		}
 		for _, g := range m.AttachedGifs {
-			get(g.Uri, func() (*http.Response, error) {
-				req, err := http.NewRequestWithContext(ctx, http.MethodGet, g.Uri, nil)
-				if err != nil {
-					return nil, err
-				}
-				return http.DefaultClient.Do(req)
-			})
+			get(g.Uri, im.layout, httpGet(ctx, g.Uri)) //nolint:bodyclose // download closes it
+		}
+		for _, r := range m.EmojiReactionSummaries {
+			if r.Emoji != nil && r.Emoji.CustomEmoji != nil {
+				cmds = append(cmds, im.fetchEmoji(ctx, r.Emoji.CustomEmoji))
+			}
+		}
+		for _, a := range m.Annotations {
+			if a.CustomEmojiMetadata != nil && a.CustomEmojiMetadata.CustomEmoji != nil {
+				cmds = append(cmds, im.fetchEmoji(ctx, a.CustomEmojiMetadata.CustomEmoji))
+			}
 		}
 	}
 	return tea.Batch(cmds...)
+}
+
+// fetchEmoji loads the image for custom emoji e, sized to two cells like a
+// Unicode emoji. Its URL is temporary, so the UID is the cache key. The URL
+// comes from e when the API filled it in, or from the organization's list.
+func (im *images) fetchEmoji(ctx context.Context, e *chat.CustomEmoji) tea.Cmd {
+	ref, url := emojiRef(e.Uid), cmp.Or(e.TemporaryImageUri, im.emoji[e.Uid])
+	if !im.enabled || url == "" || im.byRef[ref] != nil {
+		return nil
+	}
+	im.byRef[ref] = &img{}
+	lay := layout{cellW: im.layout.cellW, cellH: im.layout.cellH, maxCols: 2, maxRows: 1}
+	st := im.store
+	return func() tea.Msg { return cachedDownload(st, ref, httpGet(ctx, url), lay) } //nolint:bodyclose // download closes it
+}
+
+func emojiRef(uid string) string { return "emoji/" + uid }
+
+// httpGet fetches a public URL, such as a GIF or a custom emoji.
+func httpGet(ctx context.Context, url string) func() (*http.Response, error) {
+	return func() (*http.Response, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return nil, err
+		}
+		return http.DefaultClient.Do(req)
+	}
 }
 
 // download fetches an image, shrinks it when it's larger than its cells, and

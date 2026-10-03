@@ -9,7 +9,7 @@ Terminal client for Google Chat, for Workspace organizations.
 - Live updates through the Workspace Events API and Pub/Sub
 - Unread state synced with the web client, muted spaces respected
 - Desktop notifications following each space's notification setting
-- Reactions, edits, deletes, quotes, and completion for @mentions and `:emoji:`
+- Reactions, edits, deletes, quotes, and completion for @mentions and `:emoji:`, including the organization's custom emoji
 - Do Not Disturb, away and status from the input line
 - Drafts kept per space and thread, across restarts
 - Spaces and images cached locally and encrypted, so switching spaces and restarting are fast
@@ -195,7 +195,7 @@ While a thread or message is selected, letter keys act on it. Any other key goes
 
 | Key | Action |
 |---|---|
-| `r` | react: `1`–`6` pick a quick reaction, or type a name to search all emoji, tab to move, enter to pick. Picking one again removes it. |
+| `r` | react: `1`–`6` pick a quick reaction, or type a name to search all emoji, your organization's custom emoji first, tab to move, enter to pick. Picking one again removes it. |
 | `e` | edit your own message |
 | `d` | delete your own message, confirmed with `y` |
 | `q` | quote it in your next message |
@@ -251,6 +251,7 @@ The first run asks the user to grant these OAuth scopes. mutter asks again whene
 | `chat.users.spacesettings` | notification and mute settings |
 | `chat.users.sections.readonly` | sidebar sections |
 | `chat.users.availability` | your Do Not Disturb, away state and status |
+| `chat.customemojis.readonly` | custom emoji in completion, the reaction picker, reactions and messages |
 | `pubsub` | pulling live events |
 
 ## Limitations

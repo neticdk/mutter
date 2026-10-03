@@ -11,10 +11,11 @@ import (
 func TestReactions(t *testing.T) {
 	msg := &chat.Message{EmojiReactionSummaries: []*chat.EmojiReactionSummary{
 		{Emoji: &chat.Emoji{Unicode: "👍"}, ReactionCount: 3},
-		{Emoji: &chat.Emoji{CustomEmoji: &chat.CustomEmoji{EmojiName: "partyparrot"}}, ReactionCount: 1},
+		{Emoji: &chat.Emoji{CustomEmoji: &chat.CustomEmoji{EmojiName: ":partyparrot:"}}, ReactionCount: 1},
 		{ReactionCount: 9}, // no emoji, skipped
 	}}
-	got := reactions(msg)
+	noImage := func(string) string { return "" }
+	got := reactions(msg, noImage)
 	for _, want := range []string{"👍", "3", ":partyparrot:", "1"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("reactions = %q, missing %q", got, want)
@@ -23,7 +24,7 @@ func TestReactions(t *testing.T) {
 	if strings.Contains(got, "9") {
 		t.Errorf("reactions = %q, rendered a summary without emoji", got)
 	}
-	if reactions(&chat.Message{}) != "" {
+	if reactions(&chat.Message{}, noImage) != "" {
 		t.Error("no reactions should render nothing")
 	}
 }

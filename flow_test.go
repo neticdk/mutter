@@ -140,6 +140,16 @@ func TestFlowNewThreadReactEditQuoteDelete(t *testing.T) {
 	fl.key('1')
 	fl.waitFor(func() bool { return fl.reactions(root.Name) == 0 }, "the second pick to remove the reaction")
 
+	// Custom emoji come first in the search, and toggle by UID.
+	fl.key('r')
+	fl.typeText("party")
+	fl.key(tea.KeyEnter)
+	fl.see(":partyparrot: 1")
+	fl.key('r')
+	fl.typeText("party")
+	fl.key(tea.KeyEnter)
+	fl.waitFor(func() bool { return fl.reactions(root.Name) == 0 }, "the second custom pick to remove it")
+
 	// Edit our own thread: select it, e loads its text, enter saves.
 	fl.key(tea.KeyDown)
 	fl.key('e')
@@ -207,4 +217,22 @@ func (fl *flow) waitFor(cond func() bool, what string) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	fl.t.Fatalf("timed out waiting for %s. Screen:\n%s", what, fl.screen())
+}
+
+func TestFlowSendCustomEmoji(t *testing.T) {
+	f := newFakeChat(t)
+	f.addSpace("spaces/A", "Platform")
+	f.post("spaces/A", "", "users/alice", "Deploy is blocked")
+
+	fl := startFlow(t, f)
+	fl.see("Deploy is blocked")
+
+	// Completion offers the custom emoji first, the input keeps its code,
+	// and the send turns it into the token the API expands.
+	fl.typeText("ship :partyp")
+	fl.see("✱ partyparrot")
+	fl.key(tea.KeyTab)
+	fl.see("ship :partyparrot:")
+	fl.key(tea.KeyEnter)
+	fl.sent("spaces/A", "ship <customEmojis/ce1>")
 }
