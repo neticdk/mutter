@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"time"
 	"unicode"
@@ -30,7 +30,7 @@ type presenceMsg struct{ a *chat.Availability }
 func (m model) loadPresence() tea.Msg {
 	a, err := m.c.svc.Users.Availability.Get(availabilityName).Context(m.ctx).Do()
 	if err != nil {
-		log.Printf("availability: %v", err)
+		slog.Warn("availability", "err", err)
 		return nil
 	}
 	return presenceMsg{a}

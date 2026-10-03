@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -61,7 +61,7 @@ func newClient(ctx context.Context, hc *http.Client) (*client, error) {
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("user: %s users/%s", info.Email, info.Id)
+	slog.Info("logged in", "email", info.Email, "user", "users/"+info.Id)
 	return &client{svc: svc, me: info.Email, meID: "users/" + info.Id, settings: map[string]*chat.SpaceNotificationSetting{}}, nil
 }
 
@@ -70,7 +70,7 @@ func (c *client) spaces(ctx context.Context) ([]space, error) {
 	var out []space
 	err := c.svc.Spaces.List().PageSize(1000).Pages(ctx, func(r *chat.ListSpacesResponse) error {
 		for _, s := range r.Spaces {
-			debugJSON("space", s)
+			traceJSON("space", s)
 			out = append(out, space{name: s.Name, title: s.DisplayName, lastActive: s.LastActiveTime, dm: s.SpaceType == directMessage})
 		}
 		return nil
@@ -99,7 +99,7 @@ func (c *client) memberTitles(ctx context.Context, spaces []space) map[string]st
 		g.Go(func() error {
 			names, bot, err := c.otherMembers(ctx, s.name)
 			if err != nil {
-				log.Printf("space %s: list members: %v", s.name, err)
+				slog.Warn("list members", "space", s.name, "err", err)
 				return nil
 			}
 			title := ""
@@ -190,7 +190,7 @@ func (c *client) sections(ctx context.Context) (map[string]string, error) {
 func (c *client) otherMembers(ctx context.Context, space string) (names []string, bot bool, err error) {
 	err = c.svc.Spaces.Members.List(space).Pages(ctx, func(r *chat.ListMembershipsResponse) error {
 		for _, m := range r.Memberships {
-			debugJSON("membership", m)
+			traceJSON("membership", m)
 			if m.Member == nil || m.Member.Email == c.me {
 				continue
 			}
@@ -210,12 +210,12 @@ func (c *client) otherMembers(ctx context.Context, space string) (names []string
 func (c *client) appName(ctx context.Context, space string) string {
 	r, err := c.svc.Spaces.Messages.List(space).OrderBy("createTime desc").PageSize(25).Context(ctx).Do()
 	if err != nil {
-		log.Printf("space %s: app name: %v", space, err)
+		slog.Debug("app name", "space", space, "err", err)
 		return ""
 	}
 	for _, m := range r.Messages {
 		if m.Sender != nil && m.Sender.Type == "BOT" {
-			debugJSON("app sender", m.Sender)
+			traceJSON("app sender", m.Sender)
 			if m.Sender.DisplayName != "" {
 				return m.Sender.DisplayName
 			}
@@ -377,7 +377,7 @@ func titlesToRefresh(spaces []space, titles map[string]string, checked map[strin
 func loadTitleCache(user string) (map[string]string, map[string]int64) {
 	var tc titleCache
 	if err := readCache("titles.json", &tc); err != nil || tc.User != user || tc.Titles == nil {
-		log.Printf("title cache: ignored, err=%v", err)
+		slog.Debug("title cache ignored", "err", err)
 		return map[string]string{}, map[string]int64{}
 	}
 	if tc.Checked == nil {

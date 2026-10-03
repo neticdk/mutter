@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -31,7 +31,7 @@ func loadPrefs() prefs {
 
 func (m *model) savePrefs() {
 	if err := writeCache("prefs.json", prefs{Sidebar: m.sidebarOn}); err != nil {
-		log.Printf("prefs: %v", err)
+		slog.Warn("prefs write", "err", err)
 	}
 }
 

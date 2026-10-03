@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"slices"
@@ -102,7 +102,7 @@ func runEvents(ctx context.Context, hc *http.Client, c *client, topic string, ou
 	e := &events{c: c, ws: ws, ps: ps, topic: topic, start: time.Now(), out: out}
 	for ctx.Err() == nil {
 		err := e.run(ctx)
-		log.Printf("events: %v", err)
+		slog.Warn("live updates", "err", err)
 		out <- liveMsg{err}
 		select {
 		case <-ctx.Done():
@@ -131,7 +131,7 @@ func (e *events) run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("pub/sub read state subscription: %w", err)
 	}
-	log.Printf("events: live on %s and %s via %s and %s", spaces, user, spacesSub, userSub)
+	slog.Info("live updates connected", "spaces", spaces, "user", user, "pubsub", spacesSub, "pubsubUser", userSub)
 	e.out <- liveMsg{}
 
 	g, gctx := errgroup.WithContext(ctx)
@@ -169,7 +169,7 @@ func (e *events) pull(ctx context.Context, sub string) error {
 				return herr
 			}
 			if herr != nil {
-				log.Printf("events: %v", herr)
+				slog.Warn("event", "err", herr)
 			}
 			acks = append(acks, rm.AckId)
 		}
@@ -196,7 +196,7 @@ func (e *events) ensureWorkspaceSub(ctx context.Context, target string, types []
 		if s.State == "ACTIVE" && sameSet(s.EventTypes, types) {
 			return s.Name, e.renew(ctx, s.Name)
 		}
-		log.Printf("events: replacing %s, state=%s types=%v", s.Name, s.State, s.EventTypes)
+		slog.Info("replacing subscription", "name", s.Name, "state", s.State, "types", s.EventTypes)
 		if _, err := e.ws.Subscriptions.Delete(s.Name).Context(ctx).Do(); err != nil {
 			return "", err
 		}
@@ -229,7 +229,7 @@ func (e *events) ensureWorkspaceSub(ctx context.Context, target string, types []
 	if err := json.Unmarshal(op.Response, &s); err != nil {
 		return "", err
 	}
-	log.Printf("events: created %s", s.Name)
+	slog.Info("created subscription", "name", s.Name)
 	return s.Name, nil
 }
 
@@ -263,7 +263,7 @@ func (e *events) ensurePubsubSub(ctx context.Context, wsName, suffix string) (st
 	default:
 		// Filters are immutable, so a new workspace subscription needs a new
 		// Pub/Sub subscription.
-		log.Printf("events: replacing %s, filter=%q", name, s.Filter)
+		slog.Info("replacing pub/sub subscription", "name", name, "filter", s.Filter)
 		if _, err := e.ps.Projects.Subscriptions.Delete(name).Context(ctx).Do(); err != nil {
 			return "", err
 		}
@@ -310,7 +310,7 @@ func (e *events) handle(ctx context.Context, m *pubsub.PubsubMessage) error {
 	if err != nil {
 		return fmt.Errorf("decode %s: %w", typ, err)
 	}
-	log.Printf("event: %s time=%s data=%s", typ, m.Attributes["ce-time"], data)
+	slog.Debug("event", "type", typ, "time", m.Attributes["ce-time"], "data", string(data))
 
 	switch typ {
 	case "google.workspace.events.subscription.v1.expirationReminder":
@@ -346,7 +346,7 @@ func (e *events) handle(ctx context.Context, m *pubsub.PubsubMessage) error {
 			ev := messageEvent{kind: kind, name: n}
 			if kind != kindDeleted {
 				if ev.msg, err = e.c.svc.Spaces.Messages.Get(n).Context(ctx).Do(); err != nil {
-					log.Printf("events: get %s: %v", n, err)
+					slog.Warn("get message", "name", n, "err", err)
 					continue
 				}
 			}
@@ -365,7 +365,7 @@ func (e *events) handle(ctx context.Context, m *pubsub.PubsubMessage) error {
 			msgName, _, _ := strings.Cut(n, "/reactions/")
 			msg, err := e.c.svc.Spaces.Messages.Get(msgName).Context(ctx).Do()
 			if err != nil {
-				log.Printf("events: get %s: %v", msgName, err)
+				slog.Warn("get message", "name", msgName, "err", err)
 				continue
 			}
 			e.out <- messageEvent{kind: kindUpdated, name: msgName, msg: msg}

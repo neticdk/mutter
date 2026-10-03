@@ -34,7 +34,7 @@ Built, but not yet seen working end to end.
 
 ## 3. Performance
 
-Measure with the API call counts in `mutter.log` under `MUTTER_DEBUG` before and after each change.
+Measure with the API call counts in `mutter.log` at `MUTTER_LOG_LEVEL=debug` before and after each change.
 
 - [x] Count API calls per method
 - [x] Refresh cached DM and group-chat titles only when missing or older than 14 days, at most 32 stale per start. Membership events refresh them while running.
@@ -47,11 +47,11 @@ Measure with the API call counts in `mutter.log` under `MUTTER_DEBUG` before and
 
 ## 4. Logging
 
-- [ ] Replace `MUTTER_DEBUG` with `MUTTER_LOG_LEVEL`, defaulting to `warn`
-- [ ] Log with `log/slog` in place of `log`, and enable the `sloglint` linter
-- [ ] Add a `trace` level below `debug`, since slog has none
-- [ ] Write `tty.out` only at `trace`
-- [ ] Pick a fixed log location now that no directory is passed in, such as the user's cache directory
+- [x] Replace `MUTTER_DEBUG` with `MUTTER_LOG_LEVEL`, defaulting to `warn`
+- [x] Log with `log/slog` in place of `log`, and enable the `sloglint` linter
+- [x] Add a `trace` level below `debug`, since slog has none
+- [x] Write `tty.out` only at `trace`
+- [x] Log to `~/Library/Logs/mutter` on macOS and the XDG state directory elsewhere, keeping the previous run's log
 
 ## 5. UI tests
 

@@ -29,6 +29,7 @@ Everything is one `main` package, split into files by concern:
 | `attach.go` | downloading, saving and opening files |
 | `image.go` | images and GIFs over the kitty graphics protocol |
 | `format.go` | Chat markup, cards, quotes, message bodies |
+| `logging.go` | slog setup, levels including trace, the log location |
 
 `scripts/` holds `setup.sh`, the one-time GCP setup for admins, and `install.sh`, the install fallback for machines without Homebrew.
 
@@ -48,6 +49,7 @@ Run `just check` before committing.
 - Every non-trivial pure function gets a table test in the matching `_test.go`.
 - Add a dependency only when the standard library or an existing dependency can't do the job.
 - A `#nosec` or `_ =` needs a comment saying why the input is trusted or the error is safe to drop.
+- Log with `slog`, key-value pairs and a constant lowercase message. Failures the user may notice are `warn`, diagnostics `debug`, raw dumps `trace`.
 - Content from other people's messages is untrusted:
     - Only open http and https links.
     - Reduce file names with `safeName` and write through an `os.Root`.

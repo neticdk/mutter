@@ -5,7 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"maps"
 	"path/filepath"
 	"slices"
@@ -193,7 +193,7 @@ func (m model) loadMessages(space, lastRead string, known map[string]string) tea
 		if lastRead == "" {
 			var err error
 			if lastRead, err = m.c.readState(m.ctx, space); err != nil {
-				log.Printf("read state %s: %v", space, err)
+				slog.Warn("read state", "space", space, "err", err)
 			}
 		}
 		threads, next, err := m.c.threads(m.ctx, space, historySize, "")
@@ -202,7 +202,7 @@ func (m model) loadMessages(space, lastRead string, known map[string]string) tea
 		}
 		m.c.markNew(m.ctx, threads, lastRead, known)
 		if err := m.c.markRead(m.ctx, space); err != nil {
-			log.Printf("mark read %s: %v", space, err)
+			slog.Warn("mark read", "space", space, "err", err)
 		}
 		return messagesMsg{space, threads, next, lastRead}
 	}
@@ -361,7 +361,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if err := saveTitleCache(m.c.me, m.titles, m.titleChecked); err != nil {
-			log.Printf("title cache: %v", err)
+			slog.Warn("title cache write", "err", err)
 		}
 		if m.switching {
 			m.refilter()
@@ -462,7 +462,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case errMsg:
-		log.Printf("error: %v", msg)
+		slog.Error("shown error", "err", error(msg))
 		m.loadingOlder = false // a failed page would otherwise block older history
 		m.status = errStyle.Render(msg.Error())
 		return m, nil
@@ -516,7 +516,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		case "ctrl+v":
-			log.Print("paste: ctrl+v")
+			slog.Debug("paste: ctrl+v")
 			return m, pasteImage
 		case "ctrl+x":
 			if n := len(m.pending); n > 0 {
@@ -811,7 +811,7 @@ func (m *model) markRead(space string) tea.Cmd {
 	m.noteRead(space, time.Now().UTC().Format(time.RFC3339Nano))
 	return func() tea.Msg {
 		if err := m.c.markRead(m.ctx, space); err != nil {
-			log.Printf("mark read %s: %v", space, err)
+			slog.Warn("mark read", "space", space, "err", err)
 		}
 		return nil
 	}
@@ -860,7 +860,7 @@ func (m *model) incoming(msg *chat.Message) tea.Cmd {
 		cmds = append(cmds, func() tea.Msg {
 			setting, err := m.c.setting(m.ctx, s.name)
 			if err != nil {
-				log.Printf("notification setting %s: %v", s.name, err)
+				slog.Warn("notification setting", "space", s.name, "err", err)
 			}
 			sender := "someone"
 			if msg.Sender != nil {

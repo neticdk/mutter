@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 	"maps"
 	"strings"
 )
@@ -68,7 +68,7 @@ func (m *model) saveDraft() {
 		m.drafts[key] = d
 	}
 	if err := writeCache("drafts.json", draftFile{User: m.c.me, Drafts: m.drafts}); err != nil {
-		log.Printf("drafts: %v", err)
+		slog.Warn("drafts write", "err", err)
 	}
 }
 

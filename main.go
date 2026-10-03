@@ -3,14 +3,11 @@ package main
 import (
 	"cmp"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -32,7 +29,8 @@ func main() {
 }
 
 func run() error {
-	if err := setupDebug(); err != nil {
+	logs, level, err := setupLogging()
+	if err != nil {
 		return err
 	}
 	cfg, err := loadConfig()
@@ -57,9 +55,9 @@ func run() error {
 		ch <- liveMsg{errors.New("no topic configured, live updates off")}
 	}
 	var opts []tea.ProgramOption
-	if debugDir != "" {
-		// #nosec G304 -- MUTTER_DEBUG is set by the user running mutter
-		f, err := os.OpenFile(filepath.Join(debugDir, "tty.out"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if level <= LevelTrace {
+		// #nosec G304 -- the path is in the user's own log directory
+		f, err := os.OpenFile(filepath.Join(logs, "tty.out"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 		if err != nil {
 			return err
 		}
@@ -68,12 +66,12 @@ func run() error {
 	}
 	mdl := newModel(ctx, c, ch)
 	if st, err := openStore(c.me); err != nil {
-		log.Printf("cache: %v, running without it", err)
+		slog.Warn("cache unavailable, running without it", "err", err)
 	} else {
 		mdl.store, mdl.imgs.store = st, st
 		go func() {
 			if err := errors.Join(st.prune("msgs", maxMessageCache), st.prune("img", maxImageCache)); err != nil {
-				log.Printf("cache prune: %v", err)
+				slog.Warn("cache prune", "err", err)
 			}
 		}()
 	}
@@ -118,47 +116,4 @@ func loadConfig() (config, error) {
 	}
 	cfg.Topic = cmp.Or(cfg.Topic, topic)
 	return cfg, nil
-}
-
-// debugDir is set from MUTTER_DEBUG. It receives mutter.log and tty.out.
-var debugDir string
-
-func setupDebug() error {
-	debugDir = os.Getenv("MUTTER_DEBUG")
-	if debugDir == "" {
-		log.SetOutput(io.Discard)
-		return nil
-	}
-	if err := os.MkdirAll(debugDir, 0o700); err != nil {
-		return err
-	}
-	_, err := tea.LogToFile(filepath.Join(debugDir, "mutter.log"), "")
-	return err
-}
-
-// debugJSON logs v as JSON, to inspect raw API responses.
-func debugJSON(label string, v any) {
-	if debugDir == "" {
-		return
-	}
-	b, err := json.Marshal(v)
-	log.Printf("%s: %s err=%v", label, b, err)
-}
-
-// teeFile records everything written to the terminal. It keeps the
-// terminal's Fd so Bubble Tea still detects a TTY.
-type teeFile struct {
-	*os.File
-	rec io.Writer
-}
-
-func (t teeFile) Write(b []byte) (int, error) {
-	_, _ = t.rec.Write(b)
-	return t.File.Write(b)
-}
-
-// debugKey turns a long resource name into a short key for log lines.
-func debugKey(ref string) string {
-	sum := sha256.Sum256([]byte(ref))
-	return hex.EncodeToString(sum[:6])
 }

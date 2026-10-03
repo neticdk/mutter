@@ -320,16 +320,23 @@ Needs Go, [just](https://github.com/casey/just) and golangci-lint. gosec and gov
 
 Planned work is in [ROADMAP.md](ROADMAP.md).
 
-## Debugging
+## Logging
+
+mutter logs to `~/Library/Logs/mutter/mutter.log` on macOS, and to `$XDG_STATE_HOME/mutter/mutter.log`, usually `~/.local/state/mutter/mutter.log`, elsewhere. Each start keeps the previous run's log as `mutter.log.1`.
+
+`MUTTER_LOG_LEVEL` sets how much goes in, `warn` by default:
+
+| Level | Adds |
+|---|---|
+| `error` | errors shown in the status line |
+| `warn` | failures the user may notice, such as cache writes or API calls in the background |
+| `info` | login, live-update subscriptions |
+| `debug` | each event, image processing, paste steps, and at exit the API calls per method |
+| `trace` | raw API responses, and `tty.out` next to the log with every byte sent to the terminal. `tty.out` grows fast while GIFs animate, so keep runs short. |
 
 ```
-MUTTER_DEBUG=/tmp/mutter-debug ./mutter
+MUTTER_LOG_LEVEL=debug ./mutter
 ```
-
-This writes to the directory:
-
-- `mutter.log`: API errors, raw spaces, memberships and events, image decoding, and at exit the number of API calls per method
-- `tty.out`: every byte sent to the terminal. It grows fast while GIFs animate, so keep runs short.
 
 ## License
 

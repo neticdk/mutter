@@ -11,7 +11,7 @@ import (
 	_ "image/jpeg"
 	"image/png"
 	"io"
-	"log"
+	"log/slog"
 	"math"
 	"net/http"
 	"os"
@@ -80,7 +80,7 @@ type animMsg struct{ ref string }
 func newImages() *images {
 	enabled := os.Getenv("TERM_PROGRAM") == "ghostty" || os.Getenv("TERM") == "xterm-kitty" || os.Getenv("KITTY_WINDOW_ID") != ""
 	// #nosec G706 -- %q escapes the values, and they're the user's own environment
-	log.Printf("images: enabled=%v TERM=%q TERM_PROGRAM=%q TERM_PROGRAM_VERSION=%q", enabled, os.Getenv("TERM"), os.Getenv("TERM_PROGRAM"), os.Getenv("TERM_PROGRAM_VERSION"))
+	slog.Debug("images", "enabled", enabled, "term", os.Getenv("TERM"), "termProgram", os.Getenv("TERM_PROGRAM"), "termVersion", os.Getenv("TERM_PROGRAM_VERSION"))
 	return &images{enabled: enabled, layout: layout{8, 16, maxImageCols, 20}, byRef: map[string]*img{}, byID: map[int]*img{}}
 }
 
@@ -93,7 +93,7 @@ func (im *images) resize(width, height int) {
 		maxCols: min(maxImageCols, max(1, width-6)),
 		maxRows: min(len(diacritics), max(5, height*2/3)),
 	}
-	log.Printf("images: layout %+v", im.layout)
+	slog.Debug("image layout", "cellW", im.layout.cellW, "cellH", im.layout.cellH, "maxCols", im.layout.maxCols, "maxRows", im.layout.maxRows)
 }
 
 func imageRef(a *chat.Attachment) string {
@@ -165,7 +165,7 @@ func cachedDownload(st *store, ref string, do func() (*http.Response, error), la
 	if st != nil && msg.err == nil && len(msg.pngs) > 0 {
 		ci := cachedImage{PNGs: msg.pngs, Delays: msg.delays, Cols: msg.cols, Rows: msg.rows}
 		if err := st.put("img", key, ci); err != nil {
-			log.Printf("image cache: %v", err)
+			slog.Warn("image cache write", "err", err)
 		}
 	}
 	return msg
@@ -178,12 +178,12 @@ func download(ref string, do func() (*http.Response, error), lay layout) imageMs
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("image %s: status=%s", debugKey(ref), resp.Status)
+		slog.Warn("image download", "image", imageKey(ref), "status", resp.Status)
 		return imageMsg{ref: ref, err: fmt.Errorf("fetch image: %s", resp.Status)}
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxImageBytes))
-	key := debugKey(ref)
-	log.Printf("image %s: status=%s content-type=%q bytes=%d err=%v", key, resp.Status, resp.Header.Get("Content-Type"), len(data), err)
+	key := imageKey(ref)
+	slog.Debug("image downloaded", "image", key, "contentType", resp.Header.Get("Content-Type"), "bytes", len(data), "err", err)
 	if err != nil {
 		return imageMsg{ref: ref, err: err}
 	}
@@ -191,7 +191,7 @@ func download(ref string, do func() (*http.Response, error), lay layout) imageMs
 	// to gigabytes, so it's checked first.
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
-		log.Printf("image %s: decode: %v", key, err)
+		slog.Debug("image decode", "image", key, "err", err)
 		return imageMsg{ref: ref, err: err}
 	}
 	pixels := cfg.Width * cfg.Height
@@ -204,23 +204,23 @@ func download(ref string, do func() (*http.Response, error), lay layout) imageMs
 		frames := min(maxGIFFrames, maxGIFPixels/pixels)
 		g, err := gif.DecodeAll(bytes.NewReader(gifPrefix(data, frames)))
 		if err != nil {
-			log.Printf("image %s: decode: %v", key, err)
+			slog.Debug("image decode", "image", key, "err", err)
 			return imageMsg{ref: ref, err: err}
 		}
 		msg := decodeGIF(g, lay)
 		msg.ref = ref
-		log.Printf("image %s: format=gif frames=%d cells=%dx%d err=%v", key, len(msg.pngs), msg.cols, msg.rows, msg.err)
+		slog.Debug("image decoded", "image", key, "format", "gif", "frames", len(msg.pngs), "cols", msg.cols, "rows", msg.rows, "err", msg.err)
 		return msg
 	}
 	src, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
-		log.Printf("image %s: decode: %v", key, err)
+		slog.Debug("image decode", "image", key, "err", err)
 		return imageMsg{ref: ref, err: err}
 	}
 	b := src.Bounds()
 	pw, ph, cols, rows := fitSize(b.Dx(), b.Dy(), lay)
 	out, err := encodePNG(src, pw, ph, xdraw.CatmullRom)
-	log.Printf("image %s: format=%s bounds=%v scaled=%dx%d cells=%dx%d err=%v", key, format, b, pw, ph, cols, rows, err)
+	slog.Debug("image decoded", "image", key, "format", format, "width", b.Dx(), "height", b.Dy(), "scaledW", pw, "scaledH", ph, "cols", cols, "rows", rows, "err", err)
 	if err != nil {
 		return imageMsg{ref: ref, err: err}
 	}
@@ -383,7 +383,7 @@ func (im *images) add(msg imageMsg) (string, tea.Cmd) {
 	i.cols, i.rows = msg.cols, msg.rows
 	i.ready = true
 	seq := kittyTransmit(i.id, i.cols, i.rows, msg.pngs[0])
-	log.Printf("image %s: id=%d cells=%dx%d frames=%d seq=%d bytes", debugKey(msg.ref), i.id, i.cols, i.rows, len(msg.pngs), len(seq))
+	slog.Debug("image shown", "image", imageKey(msg.ref), "id", i.id, "cols", i.cols, "rows", i.rows, "frames", len(msg.pngs), "bytes", len(seq))
 	if len(msg.pngs) == 1 {
 		return seq, nil
 	}

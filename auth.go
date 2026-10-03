@@ -187,7 +187,7 @@ func login(ctx context.Context, cfg *oauth2.Config) (*oauth2.Token, error) {
 
 func openBrowser(url string) {
 	cmd := "xdg-open"
-	if runtime.GOOS == "darwin" {
+	if runtime.GOOS == darwin {
 		cmd = "open"
 	}
 	// #nosec G204 -- the command is fixed. Callers pass our own login URL,

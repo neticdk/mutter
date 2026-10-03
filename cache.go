@@ -2,7 +2,7 @@ package main
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"slices"
 
 	tea "charm.land/bubbletea/v2"
@@ -115,13 +115,13 @@ func (m *model) persist(name string, threads []*thread, older string) tea.Cmd {
 	}
 	plain, err := json.Marshal(snap)
 	if err != nil {
-		log.Printf("cache %s: %v", name, err)
+		slog.Warn("cache encode", "space", name, "err", err)
 		return nil
 	}
 	st := m.store
 	return func() tea.Msg {
 		if err := st.put("msgs", name, json.RawMessage(plain)); err != nil {
-			log.Printf("cache %s: %v", name, err)
+			slog.Warn("cache write", "space", name, "err", err)
 		}
 		return nil
 	}

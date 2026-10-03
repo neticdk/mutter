@@ -137,7 +137,7 @@ func createUnique(dir, name string) (*os.File, string, error) {
 // quarantine marks a downloaded file the way browsers do, so macOS
 // Gatekeeper checks it before it runs. Files come from other people.
 func quarantine(path string) {
-	if runtime.GOOS != "darwin" {
+	if runtime.GOOS != darwin {
 		return
 	}
 	v := fmt.Sprintf("0081;%x;mutter;", time.Now().Unix())

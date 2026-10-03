@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -57,7 +57,7 @@ func (m *model) forgetRead(space string) {
 
 func (m *model) saveReadTimes() {
 	if err := writeCache("readtimes.json", readTimesFile{User: m.c.me, Times: m.readTimes}); err != nil {
-		log.Printf("read times: %v", err)
+		slog.Warn("read times write", "err", err)
 	}
 }
 
@@ -90,7 +90,7 @@ func (c *client) unread(ctx context.Context, spaces []space, known map[string]st
 		g.Go(func() error {
 			rs, err := c.svc.Users.Spaces.GetSpaceReadState(readStateName(s.name)).Context(ctx).Do()
 			if err != nil {
-				log.Printf("read state %s: %v", s.name, err)
+				slog.Warn("read state", "space", s.name, "err", err)
 				return nil
 			}
 			info := readInfo{unread: isUnread(s.lastActive, rs.LastReadTime), lastRead: rs.LastReadTime}

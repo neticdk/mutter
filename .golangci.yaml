@@ -17,6 +17,7 @@ linters:
     - nilerr # returning nil while holding a non-nil error
     - prealloc # slices that could be preallocated
     - revive # style and correctness rules, configured below
+    - sloglint # consistent slog calls
     - staticcheck # static analysis
     - unconvert # unnecessary conversions
     - unparam # unused parameters and results
@@ -33,6 +34,11 @@ linters:
         G306: "0640" # os.WriteFile
     misspell:
       locale: US
+    sloglint:
+      kv-only: true
+      static-msg: true
+      msg-style: lowercased
+      key-naming-case: camel
     revive:
       enable-all-rules: false
       rules:

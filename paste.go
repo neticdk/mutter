@@ -5,7 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -39,20 +39,20 @@ var clipboardReady = sync.OnceValue(clipboard.Init)
 // it falls back to the input's own text paste.
 func pasteImage() tea.Msg {
 	if err := clipboardReady(); err != nil {
-		log.Printf("clipboard: %v", err)
+		slog.Warn("clipboard", "err", err)
 		return textarea.Paste()
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	png, err := clipboard.Read(ctx, clipboard.FmtImage)
 	if err != nil || len(png) == 0 {
-		log.Printf("paste: no image on the clipboard, pasting text: %v", err)
+		slog.Debug("paste: no image, pasting text", "err", err)
 		if text, terr := clipboard.Read(ctx, clipboard.FmtText); terr != nil || len(text) == 0 {
 			return noticeMsg("nothing to paste: the clipboard has no image or text")
 		}
 		return textarea.Paste()
 	}
-	log.Printf("paste: image, %d bytes", len(png))
+	slog.Debug("paste: image", "bytes", len(png))
 	return pastedMsg{name: "pasted-" + time.Now().Format("150405") + ".png", data: png}
 }
 

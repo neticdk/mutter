@@ -2,7 +2,7 @@ package main
 
 import (
 	"cmp"
-	"log"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -121,7 +121,7 @@ func (m *model) applySpace(msg spaceInfoMsg) tea.Cmd {
 		m.titles[msg.name] = msg.space.title
 		m.titleChecked[msg.name] = time.Now().Unix()
 		if err := saveTitleCache(m.c.me, m.titles, m.titleChecked); err != nil {
-			log.Printf("title cache: %v", err)
+			slog.Warn("title cache write", "err", err)
 		}
 	}
 	if m.switching {
@@ -202,7 +202,7 @@ func (m *model) openDM(tries []string, fail string) tea.Cmd {
 		for _, user := range tries {
 			name, err := m.c.dm(m.ctx, user)
 			if err != nil {
-				log.Printf("dm %s: %v", user, err)
+				slog.Debug("dm attempt", "user", user, "err", err)
 				lastErr = err
 				continue
 			}
@@ -222,7 +222,7 @@ func (m *model) openDM(tries []string, fail string) tea.Cmd {
 func (m model) loadSections() tea.Msg {
 	s, err := m.c.sections(m.ctx)
 	if err != nil {
-		log.Printf("sections: %v", err)
+		slog.Warn("sections", "err", err)
 		return nil
 	}
 	return sectionsMsg(s)

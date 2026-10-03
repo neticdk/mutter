@@ -2,8 +2,7 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
@@ -12,11 +11,11 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// apiClient is the HTTP client for every Google API. In debug mode it
+// apiClient is the HTTP client for every Google API. At debug level it
 // counts requests per method, and logAPICalls writes the counts to the log.
 func apiClient(ctx context.Context, ts oauth2.TokenSource) *http.Client {
 	hc := oauth2.NewClient(ctx, ts)
-	if debugDir != "" {
+	if enabled(slog.LevelDebug) {
 		hc.Transport = &counting{base: hc.Transport, n: map[string]int{}}
 	}
 	return hc
@@ -77,10 +76,8 @@ func logAPICalls(hc *http.Client) {
 		total += n
 	}
 	slices.SortFunc(keys, func(a, b string) int { return c.n[b] - c.n[a] })
-	var b strings.Builder
-	fmt.Fprintf(&b, "api calls: %d total", total)
+	slog.Debug("api calls", "total", total)
 	for _, k := range keys {
-		fmt.Fprintf(&b, "\n  %6d  %s", c.n[k], k)
+		slog.Debug("api calls", "method", k, "count", c.n[k])
 	}
-	log.Print(b.String())
 }
