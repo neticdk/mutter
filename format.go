@@ -6,6 +6,7 @@ import (
 	"html"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"charm.land/lipgloss/v2"
 	"google.golang.org/api/chat/v1"
@@ -35,8 +36,32 @@ var inline = []struct {
 	{marker("~"), strikeStyle},
 }
 
+// clean drops control characters other than newline and tab from untrusted
+// text, so it can't smuggle escape sequences into the terminal.
+func clean(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) && r != '\n' && r != '\t' {
+			return -1
+		}
+		return r
+	}, s)
+}
+
+// stripC1 drops C1 controls from a whole frame. The renderer filters 7-bit
+// sequences but passes C1 through, and names, titles and notices reach the
+// frame uncleaned. The styles only emit 7-bit escapes, so none are lost.
+func stripC1(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r >= 0x80 && r <= 0x9f {
+			return -1
+		}
+		return r
+	}, s)
+}
+
 // formatText renders Google Chat markup for the terminal.
 func formatText(s string) string {
+	s = clean(s)
 	var b strings.Builder
 	for i, block := range strings.Split(s, "```") {
 		if i%2 == 1 {
@@ -82,7 +107,7 @@ func messageBody(m *chat.Message, img func(ref string) string, num *int) string 
 		}
 	}
 	if len(parts) == 0 && m.FallbackText != "" {
-		parts = append(parts, m.FallbackText)
+		parts = append(parts, clean(m.FallbackText))
 	}
 	for _, a := range m.Attachment {
 		*num++
@@ -132,10 +157,10 @@ func cardText(c *chat.GoogleAppsCardV1Card) string {
 	var lines []string
 	if h := c.Header; h != nil {
 		if h.Title != "" {
-			lines = append(lines, boldStyle.Render(h.Title))
+			lines = append(lines, boldStyle.Render(clean(h.Title)))
 		}
 		if h.Subtitle != "" {
-			lines = append(lines, dimStyle.Render(h.Subtitle))
+			lines = append(lines, dimStyle.Render(clean(h.Subtitle)))
 		}
 	}
 	for _, sec := range c.Sections {
@@ -166,8 +191,8 @@ func widgetLines(w *chat.GoogleAppsCardV1Widget) []string {
 	if b := w.ButtonList; b != nil {
 		buttons := make([]string, 0, len(b.Buttons))
 		for _, btn := range b.Buttons {
-			label := "[ " + btn.Text + " ]"
-			if btn.OnClick != nil && btn.OnClick.OpenLink != nil {
+			label := "[ " + clean(btn.Text) + " ]"
+			if btn.OnClick != nil && btn.OnClick.OpenLink != nil && webLink(btn.OnClick.OpenLink.Url) {
 				label = linkStyle.Hyperlink(btn.OnClick.OpenLink.Url).Render(label)
 			}
 			buttons = append(buttons, label)
@@ -175,7 +200,7 @@ func widgetLines(w *chat.GoogleAppsCardV1Widget) []string {
 		lines = append(lines, strings.Join(buttons, " "))
 	}
 	if i := w.Image; i != nil {
-		lines = append(lines, dimStyle.Render("[image: "+cmp.Or(i.AltText, i.ImageUrl)+"]"))
+		lines = append(lines, dimStyle.Render("[image: "+clean(cmp.Or(i.AltText, i.ImageUrl))+"]"))
 	}
 	if w.Divider != nil {
 		lines = append(lines, dimStyle.Render("───"))
@@ -202,17 +227,28 @@ var (
 	iTag      = regexp.MustCompile(`(?is)<i>(.*?)</i>`)
 	aTag      = regexp.MustCompile(`(?is)<a\s[^>]*href="([^"]*)"[^>]*>(.*?)</a>`)
 	anyTag    = regexp.MustCompile(`<[^>]+>`)
+	entity    = regexp.MustCompile(`&#?[0-9A-Za-z]+;?`)
 )
 
 // cardHTML renders the HTML subset that card text fields accept. Tags other
-// than b, i, a and br are dropped and their text kept.
+// than b, i, a and br are dropped and their text kept. Only http(s) links
+// become clickable, because terminals hand other schemes to local apps.
 func cardHTML(s string) string {
-	s = brTag.ReplaceAllString(s, "\n")
+	s = brTag.ReplaceAllString(clean(s), "\n")
 	s = aTag.ReplaceAllStringFunc(s, func(m string) string {
 		sub := aTag.FindStringSubmatch(m)
-		return linkStyle.Hyperlink(html.UnescapeString(sub[1])).Render(sub[2])
+		href := html.UnescapeString(sub[1])
+		if !webLink(href) {
+			return sub[2]
+		}
+		return linkStyle.Hyperlink(href).Render(sub[2])
 	})
 	s = bTag.ReplaceAllStringFunc(s, func(m string) string { return boldStyle.Render(bTag.FindStringSubmatch(m)[1]) })
 	s = iTag.ReplaceAllStringFunc(s, func(m string) string { return italicStyle.Render(iTag.FindStringSubmatch(m)[1]) })
-	return html.UnescapeString(anyTag.ReplaceAllString(s, ""))
+
+	// Entities unescape one at a time, so &#27; can't become a raw ESC
+	// among the styling escapes.
+	return entity.ReplaceAllStringFunc(anyTag.ReplaceAllString(s, ""), func(e string) string {
+		return clean(html.UnescapeString(e))
+	})
 }

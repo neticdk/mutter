@@ -32,9 +32,24 @@ func TestKittyPlaceholderWidth(t *testing.T) {
 }
 
 func TestCardHTML(t *testing.T) {
-	got := cardHTML(`a<br>b &amp; <font color="#f00">c</font>`)
-	if got != "a\nb & c" {
-		t.Errorf("cardHTML = %q", got)
+	for in, want := range map[string]string{
+		`a<br>b &amp; <font color="#f00">c</font>`:    "a\nb & c",
+		`<a href="file:///etc/passwd">x</a>`:          "x",
+		`<a href="vscode://x">x</a> &#27;]8;;y&#x9b;`: "x ]8;;y›",
+		"a\x1b]52;c;aGk=\x07b\u009b2J":                "a]52;c;aGk=b2J",
+	} {
+		if got := cardHTML(in); got != want {
+			t.Errorf("cardHTML(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestFormatTextDropsControls(t *testing.T) {
+	if got := formatText("a\x1b]8;;file:///x\x07b\u009dc\n\td"); got != "a]8;;file:///xbc\n\td" {
+		t.Errorf("formatText = %q", got)
+	}
+	if got := stripC1("a\u009b2J\x1b[1mb"); got != "a2J\x1b[1mb" {
+		t.Errorf("stripC1 = %q", got)
 	}
 }
 

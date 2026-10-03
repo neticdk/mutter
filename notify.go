@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/chat/v1"
@@ -186,7 +187,7 @@ func shouldNotify(s *chat.SpaceNotificationSetting, dm, mentioned, newThread boo
 func osc777(title, body string) string {
 	clean := func(s string) string {
 		return strings.Map(func(r rune) rune {
-			if r == ';' || r < 0x20 || r == 0x7f {
+			if r == ';' || unicode.IsControl(r) {
 				return ' '
 			}
 			return r

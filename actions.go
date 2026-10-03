@@ -5,8 +5,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -206,8 +204,8 @@ func (m *model) openFile(f file) (string, error) {
 		}
 		return "opened " + f.label + " in the browser", nil
 	}
-	dir := filepath.Join(os.TempDir(), "mutter")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	dir, err := openDir()
+	if err != nil {
 		return "", err
 	}
 	path, err := m.c.saveFile(m.ctx, f, dir)
@@ -227,7 +225,11 @@ func (m *model) saveToDownloads(f file) (string, error) {
 		}
 		return "opened " + f.label + " in the browser, Drive files and GIFs can't be saved from here", nil
 	}
-	path, err := m.c.saveFile(m.ctx, f, downloadsDir())
+	dir, err := downloadsDir()
+	if err != nil {
+		return "", err
+	}
+	path, err := m.c.saveFile(m.ctx, f, dir)
 	if err != nil {
 		return "", err
 	}
@@ -238,12 +240,16 @@ func (m *model) saveToDownloads(f file) (string, error) {
 // messages, and open hands custom schemes to local apps, so only http(s)
 // passes.
 func openURL(f file) error {
-	u, err := url.Parse(f.url)
-	if err != nil || (u.Scheme != "https" && u.Scheme != "http") {
+	if !webLink(f.url) {
 		return fmt.Errorf("won't open %s, its link isn't http(s)", f.label)
 	}
 	openBrowser(f.url)
 	return nil
+}
+
+func webLink(s string) bool {
+	u, err := url.Parse(s)
+	return err == nil && (u.Scheme == "https" || u.Scheme == "http")
 }
 
 // unreadFrom marks the open space unread from at onward. It holds off

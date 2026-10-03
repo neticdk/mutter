@@ -998,12 +998,12 @@ func (m model) View() tea.View {
 	if status == "" {
 		status = dimStyle.Render(hint)
 	}
-	v := tea.NewView(lipgloss.JoinVertical(lipgloss.Left,
+	v := tea.NewView(stripC1(lipgloss.JoinVertical(lipgloss.Left,
 		headerStyle.Render(title),
 		body,
 		inputStyle.Render(m.ta.View()),
 		status,
-	))
+	)))
 	v.AltScreen = true
 	v.ReportFocus = true
 	return v

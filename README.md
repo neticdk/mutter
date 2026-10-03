@@ -208,7 +208,7 @@ While a thread or message is selected, letter keys act on it. Any other key goes
 | `/logout` | delete the stored token and quit |
 | `/quit` | quit |
 
-Saved files get the macOS quarantine attribute, so Gatekeeper checks them before they run. `/open` only follows http and https links.
+Saved files get the macOS quarantine attribute, so Gatekeeper checks them before they run. Leading dots are stripped from their names, so a file can't land as a hidden dotfile. `/save` creates `~/Downloads` when it's missing. `/open` downloads into mutter's directory in the user cache dir. `/open` only follows http and https links, and only http and https links in cards are clickable.
 
 ### Permissions
 
