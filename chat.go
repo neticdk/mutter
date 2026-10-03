@@ -6,13 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
-	"golang.org/x/oauth2"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/chat/v1"
 	oauth2api "google.golang.org/api/oauth2/v2"
@@ -47,12 +48,12 @@ type space struct {
 	section    string // custom sidebar section in the web client
 }
 
-func newClient(ctx context.Context, ts oauth2.TokenSource) (*client, error) {
-	svc, err := chat.NewService(ctx, option.WithTokenSource(ts))
+func newClient(ctx context.Context, hc *http.Client) (*client, error) {
+	svc, err := chat.NewService(ctx, option.WithHTTPClient(hc))
 	if err != nil {
 		return nil, err
 	}
-	ui, err := oauth2api.NewService(ctx, option.WithTokenSource(ts))
+	ui, err := oauth2api.NewService(ctx, option.WithHTTPClient(hc))
 	if err != nil {
 		return nil, err
 	}
@@ -336,47 +337,92 @@ func (c *client) send(ctx context.Context, space string, out outgoing) (*chat.Me
 // startup while the background lookup refreshes them. Titles are relative to
 // the logged-in user, so a cache written for someone else is ignored.
 type titleCache struct {
-	User   string            `json:"user"`
-	Titles map[string]string `json:"titles"` // "" marks a hidden space
+	User    string            `json:"user"`
+	Titles  map[string]string `json:"titles"`            // "" marks a hidden space
+	Checked map[string]int64  `json:"checked,omitempty"` // Unix seconds of each title's last lookup
 }
 
-func titleCachePath() (string, error) {
+const (
+	// titleTTL is how long a cached title is trusted. Membership events
+	// update titles while mutter runs, so this only covers changes made
+	// while it was closed.
+	titleTTL = 14 * 24 * time.Hour
+	// maxStaleTitles caps the refreshes of stale titles per start, so a
+	// cache that ages all at once refreshes over several starts.
+	maxStaleTitles = 32
+)
+
+// titlesToRefresh picks the untitled spaces to look up, in the order given:
+// every space missing from the cache, and up to maxStaleTitles whose title
+// is older than titleTTL.
+func titlesToRefresh(spaces []space, titles map[string]string, checked map[string]int64, now time.Time) []space {
+	var out []space
+	stale := 0
+	for _, s := range spaces {
+		if s.title != "" {
+			continue
+		}
+		if _, ok := titles[s.name]; !ok {
+			out = append(out, s)
+			continue
+		}
+		if now.Sub(time.Unix(checked[s.name], 0)) > titleTTL && stale < maxStaleTitles {
+			stale++
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func loadTitleCache(user string) (map[string]string, map[string]int64) {
+	var tc titleCache
+	if err := readCache("titles.json", &tc); err != nil || tc.User != user || tc.Titles == nil {
+		log.Printf("title cache: ignored, err=%v", err)
+		return map[string]string{}, map[string]int64{}
+	}
+	if tc.Checked == nil {
+		tc.Checked = map[string]int64{}
+	}
+	return tc.Titles, tc.Checked
+}
+
+func saveTitleCache(user string, titles map[string]string, checked map[string]int64) error {
+	return writeCache("titles.json", titleCache{User: user, Titles: titles, Checked: checked})
+}
+
+// cachePath is where mutter keeps the named cache file.
+func cachePath(name string) (string, error) {
 	dir, err := os.UserCacheDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "mutter", "titles.json"), nil
+	return filepath.Join(dir, "mutter", name), nil
 }
 
-func loadTitleCache(user string) map[string]string {
-	empty := map[string]string{}
-	path, err := titleCachePath()
+// readCache decodes the named cache file into v.
+func readCache(name string, v any) error {
+	path, err := cachePath(name)
 	if err != nil {
-		return empty
+		return err
 	}
 	b, err := os.ReadFile(path) // #nosec G304 -- path is in the user's cache dir
 	if err != nil {
-		return empty
+		return err
 	}
-	var tc titleCache
-	if err := json.Unmarshal(b, &tc); err != nil || tc.User != user || tc.Titles == nil {
-		log.Printf("title cache: ignored, err=%v", err)
-		return empty
-	}
-	return tc.Titles
+	return json.Unmarshal(b, v)
 }
 
-// saveTitleCache writes through a temp file so a crash mid-write can't leave
-// a truncated cache.
-func saveTitleCache(user string, titles map[string]string) error {
-	path, err := titleCachePath()
+// writeCache writes v to the named cache file through a temp file, so a
+// crash mid-write can't leave it truncated.
+func writeCache(name string, v any) error {
+	path, err := cachePath(name)
 	if err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	b, err := json.Marshal(titleCache{User: user, Titles: titles})
+	b, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}

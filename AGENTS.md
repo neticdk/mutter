@@ -19,6 +19,10 @@ Everything is one `main` package, split into files by concern:
 | `actions.go` | actions on a selected message: react, edit, delete, files |
 | `compose.go` | @mention completion, `/attach` |
 | `nav.go` | older history, live spaces, `/dm`, sections |
+| `presence.go` | the user's own availability: `/dnd`, `/away`, `/active`, `/status` |
+| `drafts.go` | unsent input per space and thread, kept in the cache directory |
+| `cache.go` | spaces kept in memory and followed by live events, snapshots on disk |
+| `store.go` | the encrypted on-disk cache for spaces and images |
 | `attach.go` | downloading, saving and opening files |
 | `image.go` | images and GIFs over the kitty graphics protocol |
 | `format.go` | Chat markup, cards, quotes, message bodies |

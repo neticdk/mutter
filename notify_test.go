@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"google.golang.org/api/chat/v1"
 )
@@ -76,5 +78,39 @@ func TestCountNew(t *testing.T) {
 	c.countNew(unknown, "")
 	if unknown.rootNew || unknown.unseen != 0 {
 		t.Error("unknown read state should mark nothing")
+	}
+}
+
+func TestNeedsReadState(t *testing.T) {
+	cutoff := "2026-09-01T00:00:00Z"
+	known := map[string]string{"spaces/read": "2026-10-02T12:00:00Z", "spaces/behind": "2026-10-01T00:00:00Z"}
+	tests := []struct {
+		s    space
+		want bool
+	}{
+		{space{name: "spaces/read", lastActive: "2026-10-02T11:00:00Z"}, false},   // read since its last activity
+		{space{name: "spaces/behind", lastActive: "2026-10-02T11:00:00Z"}, true},  // activity after the known read
+		{space{name: "spaces/unknown", lastActive: "2026-10-02T11:00:00Z"}, true}, // never seen
+		{space{name: "spaces/quiet", lastActive: "2026-08-01T00:00:00Z"}, false},  // outside the window
+		{space{name: "spaces/hidden", lastActive: "2026-10-02T11:00:00Z", hidden: true}, false},
+	}
+	for _, tt := range tests {
+		if got := needsReadState(tt.s, known, cutoff); got != tt.want {
+			t.Errorf("%s: got %v", tt.s.name, got)
+		}
+	}
+}
+
+func TestMarkNewSkipsKnownThreads(t *testing.T) {
+	c := &client{meID: "users/me"} // no API service: a lookup would panic
+	now := time.Now().UTC()
+	at := func(d time.Duration) string { return now.Add(d).Format(time.RFC3339) }
+	th := &thread{name: "spaces/A/threads/1", msgs: []*chat.Message{
+		{Name: "m1", Sender: &chat.User{Name: "users/x"}, CreateTime: at(-3 * time.Hour)},
+		{Name: "m2", Sender: &chat.User{Name: "users/x"}, CreateTime: at(-2 * time.Hour)},
+	}}
+	c.markNew(context.Background(), []*thread{th}, at(-4*time.Hour), map[string]string{th.name: at(-time.Hour)})
+	if th.readAt != at(-time.Hour) || th.unseen != 0 {
+		t.Errorf("readAt %s unseen %d, want the known read time and nothing new", th.readAt, th.unseen)
 	}
 }

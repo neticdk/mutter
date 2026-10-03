@@ -19,7 +19,8 @@ func TestFormatText(t *testing.T) {
 		{"(*x*)", "(" + b("x") + ")"},
 		{"*a* *b*", b("a") + " " + b("b")},
 		{"`*raw*`", c("*raw*")},
-		{"```\nfn *x*\n```", c("fn *x*")},
+		{"```\nfn *x*\n```", codeBlockStyle.Render("fn *x*")},
+		{"see ```x```", "see \n" + codeBlockStyle.Render("x")}, // a block starts on its own line
 	}
 	for _, tt := range tests {
 		if got := formatText(tt.in); got != tt.want {

@@ -42,6 +42,7 @@ const (
 // and redraws them like any other text.
 type images struct {
 	enabled bool
+	store   *store // caches processed images on disk, nil to skip
 	layout  layout
 	nextID  int
 	byRef   map[string]*img
@@ -116,7 +117,8 @@ func (im *images) fetch(ctx context.Context, c *client, msgs []*chat.Message) te
 		}
 		im.byRef[ref] = &img{}
 		lay := im.layout
-		cmds = append(cmds, func() tea.Msg { return download(ref, do, lay) })
+		st := im.store
+		cmds = append(cmds, func() tea.Msg { return cachedDownload(st, ref, do, lay) })
 	}
 	for _, m := range msgs {
 		for _, a := range m.Attachment {
@@ -140,6 +142,35 @@ func (im *images) fetch(ctx context.Context, c *client, msgs []*chat.Message) te
 // re-encodes it as PNG, the one format every kitty-protocol terminal accepts.
 // GIFs become one PNG per frame. The terminal scales the result to fill the
 // cells.
+// cachedImage is a processed image as stored on disk.
+type cachedImage struct {
+	PNGs   [][]byte        `json:"pngs"`
+	Delays []time.Duration `json:"delays"`
+	Cols   int             `json:"cols"`
+	Rows   int             `json:"rows"`
+}
+
+// cachedDownload serves an image from the disk cache, or downloads and
+// caches it. Frames are sized for a layout, so the layout is part of the
+// key.
+func cachedDownload(st *store, ref string, do func() (*http.Response, error), lay layout) imageMsg {
+	key := fmt.Sprintf("%s|%d|%d|%d|%d", ref, lay.cellW, lay.cellH, lay.maxCols, lay.maxRows)
+	if st != nil {
+		var ci cachedImage
+		if err := st.get("img", key, &ci); err == nil && len(ci.PNGs) > 0 {
+			return imageMsg{ref: ref, pngs: ci.PNGs, delays: ci.Delays, cols: ci.Cols, rows: ci.Rows}
+		}
+	}
+	msg := download(ref, do, lay)
+	if st != nil && msg.err == nil && len(msg.pngs) > 0 {
+		ci := cachedImage{PNGs: msg.pngs, Delays: msg.delays, Cols: msg.cols, Rows: msg.rows}
+		if err := st.put("img", key, ci); err != nil {
+			log.Printf("image cache: %v", err)
+		}
+	}
+	return msg
+}
+
 func download(ref string, do func() (*http.Response, error), lay layout) imageMsg {
 	resp, err := do()
 	if err != nil {

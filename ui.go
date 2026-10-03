@@ -3,8 +3,10 @@ package main
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -71,8 +73,10 @@ type model struct {
 	cursor   int       // selected thread in the space view
 	inThread *thread   // thread view when set
 
-	imgs   *images
-	titles map[string]string // title cache, see titleCache
+	imgs         *images
+	titles       map[string]string // title cache, see titleCache
+	titleChecked map[string]int64  // when each cached title was looked up
+	readTimes    map[string]string // see readTimesFile
 
 	events  <-chan tea.Msg
 	live    bool
@@ -96,8 +100,17 @@ type model struct {
 	openRead     string // the open space's read state before it opened
 	loadingOlder bool
 
+	// Caching, see cache.go. loading is set while the open space fetches,
+	// and arrived holds the live messages that come in meanwhile.
+	mem     map[string]*cachedSpace
+	store   *store
+	loading bool
+	arrived []*chat.Message
+
 	members  map[string][]member // by space, for @mention completion
+	drafts   map[string]draft    // by draftKey
 	comp     *completion         // active tab cycle, see complete
+	presence *chat.Availability  // the user's own state, shown in the header
 	mentions map[string]string   // completed "@Name" in the draft to "<users/ID>"
 
 	vp viewport.Model
@@ -127,11 +140,11 @@ func newModel(ctx context.Context, c *client, events <-chan tea.Msg) model {
 	f := textinput.New()
 	f.Prompt = "switch to: "
 
-	return model{ctx: ctx, c: c, events: events, focused: true, cur: -1, members: map[string][]member{}, mentions: map[string]string{}, ta: ta, filter: f, vp: viewport.New(), imgs: newImages(), status: "loading spaces…"}
+	return model{ctx: ctx, c: c, events: events, focused: true, cur: -1, members: map[string][]member{}, mentions: map[string]string{}, drafts: loadDrafts(c.me), readTimes: loadReadTimes(c.me), mem: map[string]*cachedSpace{}, ta: ta, filter: f, vp: viewport.New(), imgs: newImages(), status: "loading spaces…"}
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(m.loadSpaces, m.waitEvent, tea.Raw(kittyClear))
+	return tea.Batch(m.loadSpaces, m.waitEvent, m.loadPresence, tea.Raw(kittyClear))
 }
 
 func (m model) waitEvent() tea.Msg {
@@ -150,19 +163,6 @@ func (m model) loadSpaces() tea.Msg {
 // arrive most recently active first, so the ones in use get names first.
 const titleChunk = 32
 
-// loadTitles looks up names for the untitled spaces among spaces, one chunk
-// per round. It must be called before the spacesMsg handler fills in
-// placeholder titles.
-func (m model) loadTitles(spaces []space) tea.Cmd {
-	var untitled []space
-	for _, s := range spaces {
-		if s.title == "" {
-			untitled = append(untitled, s)
-		}
-	}
-	return m.loadTitleChunk(untitled)
-}
-
 func (m model) loadTitleChunk(untitled []space) tea.Cmd {
 	if len(untitled) == 0 {
 		return nil
@@ -176,7 +176,7 @@ func (m model) loadTitleChunk(untitled []space) tea.Cmd {
 // loadMessages loads space and flags what's new since lastRead, fetching
 // the read state when lastRead is unknown. It marks the space read only
 // afterwards, so the flags reflect the state before opening.
-func (m model) loadMessages(space, lastRead string) tea.Cmd {
+func (m model) loadMessages(space, lastRead string, known map[string]string) tea.Cmd {
 	return func() tea.Msg {
 		if lastRead == "" {
 			var err error
@@ -188,7 +188,7 @@ func (m model) loadMessages(space, lastRead string) tea.Cmd {
 		if err != nil {
 			return errMsg(err)
 		}
-		m.c.markNew(m.ctx, threads, lastRead)
+		m.c.markNew(m.ctx, threads, lastRead, known)
 		if err := m.c.markRead(m.ctx, space); err != nil {
 			log.Printf("mark read %s: %v", space, err)
 		}
@@ -219,10 +219,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case spacesMsg:
-		cmds := []tea.Cmd{m.loadTitles(msg)}
+		m.titles, m.titleChecked = loadTitleCache(m.c.me)
+		// Picked before the placeholders below fill in the empty titles.
+		cmds := []tea.Cmd{m.loadTitleChunk(titlesToRefresh(msg, m.titles, m.titleChecked, time.Now()))}
 		m.spaces = msg
 		m.status = ""
-		m.titles = loadTitleCache(m.c.me)
 		for i, s := range m.spaces {
 			if s.title != "" {
 				continue
@@ -232,7 +233,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.spaces[i].title = cmp.Or(t, s.name)
 		}
 		spaces := slices.Clone(m.spaces)
-		cmds = append(cmds, func() tea.Msg { return unreadMsg(m.c.unread(m.ctx, spaces)) }, m.loadSections)
+		known := maps.Clone(m.readTimes)
+		cmds = append(cmds, func() tea.Msg { return unreadMsg(m.c.unread(m.ctx, spaces, known)) }, m.loadSections)
 		if len(m.spaces) > 0 {
 			cmds = append(cmds, m.open(0))
 		}
@@ -247,6 +249,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.spaces[i].unread = info.unread && !info.muted
 			m.spaces[i].muted = info.muted
 			m.spaces[i].lastRead = info.lastRead
+			m.noteRead(s.name, info.lastRead)
 		}
 		if m.switching {
 			m.refilter()
@@ -254,6 +257,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case readStateMsg:
+		m.noteRead(msg.space, msg.lastRead)
 		if i := m.spaceIndex(msg.space); i >= 0 && i != m.cur {
 			m.spaces[i].unread = !m.spaces[i].muted && isUnread(m.spaces[i].lastActive, msg.lastRead)
 			m.spaces[i].lastRead = msg.lastRead
@@ -269,6 +273,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case markedUnreadMsg:
+		m.forgetRead(msg.space) // moved back, so look it up next start
 		if m.cur >= 0 && m.spaces[m.cur].name == msg.space {
 			for _, t := range m.threads {
 				t.unseen, t.readAt = 0, msg.lastRead
@@ -290,10 +295,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.FocusMsg:
 		m.focused = true
+		// The state may have changed elsewhere, or a DND may have run out.
+		cmds := []tea.Cmd{m.loadPresence}
 		if m.cur >= 0 && m.spaces[m.cur].unread && !m.holdRead {
 			m.spaces[m.cur].unread = false
-			return m, m.markRead(m.spaces[m.cur].name)
+			cmds = append(cmds, m.markRead(m.spaces[m.cur].name))
 		}
+		return m, tea.Batch(cmds...)
+
+	case presenceMsg:
+		m.presence = msg.a
 		return m, nil
 
 	case tea.BlurMsg:
@@ -307,12 +318,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				continue
 			}
 			m.titles[s.name] = t
+			m.titleChecked[s.name] = time.Now().Unix()
 			m.spaces[i].hidden = t == ""
 			if t != "" {
 				m.spaces[i].title = t
 			}
 		}
-		if err := saveTitleCache(m.c.me, m.titles); err != nil {
+		if err := saveTitleCache(m.c.me, m.titles, m.titleChecked); err != nil {
 			log.Printf("title cache: %v", err)
 		}
 		if m.switching {
@@ -322,26 +334,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case messagesMsg:
 		if m.cur >= 0 && m.spaces[m.cur].name == msg.space {
-			live := m.threads
-			m.threads = msg.threads
+			arrived := m.arrived
+			m.threads, m.arrived, m.loading = msg.threads, nil, false
+			m.noteRead(msg.space, time.Now().UTC().Format(time.RFC3339Nano)) // the load marked it read
 			m.cursor = len(m.threads) - 1
 			m.olderToken, m.openRead = msg.next, msg.lastRead
 			m.status = ""
 			// Messages that arrived while the space loaded may postdate the
-			// fetch.
-			for _, t := range live {
-				for _, x := range t.msgs {
-					if _, _, ok := m.find(x.Name); !ok {
-						m.add(x)
-					}
+			// fetch. A disk snapshot shown meanwhile is dropped, so messages
+			// deleted since it was written don't come back.
+			for _, x := range arrived {
+				if _, _, ok := m.find(x.Name); !ok {
+					m.add(x)
 				}
 			}
 			m.render()
-			var roots []*chat.Message
-			for _, t := range m.threads {
-				roots = append(roots, t.msgs[0])
-			}
-			return m, m.imgs.fetch(m.ctx, m.c, roots)
+			return m, tea.Batch(m.imgs.fetch(m.ctx, m.c, rootsOf(m.threads)), m.persist(msg.space, m.threads, m.olderToken))
 		}
 		return m, nil
 
@@ -369,10 +377,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return next, tea.Batch(cmd, m.waitEvent)
 
 	case liveMsg:
+		if msg.err != nil && m.live {
+			m.liveLost()
+		}
 		m.live, m.liveErr = msg.err == nil, msg.err
 		return m, nil
 
 	case messageEvent:
+		m.applyCached(msg)
 		switch msg.kind {
 		case kindCreated:
 			return m, m.incoming(msg.msg)
@@ -468,13 +480,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case m.selecting:
 				m.selecting = false
 			case m.inThread != nil:
+				m.saveDraft()
 				m.setThread(nil)
+				m.loadDraft()
 			}
 			m.render()
 			return m, nil
 		case "enter":
 			if t := m.target(); m.ta.Value() == "" && m.inThread == nil && t != nil {
+				m.saveDraft()
 				m.setThread(t)
+				m.loadDraft()
 				return m, m.imgs.fetch(m.ctx, m.c, t.msgs)
 			}
 			return m.submit()
@@ -524,10 +540,13 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.ta.Reset()
+	m.saveDraft() // sent, so the context's draft goes
 	fields := strings.Fields(text)
 	switch fields[0] {
 	case "/open", "/save":
 		return m, m.fileCmd(fields)
+	case "/dnd", "/away", "/active", "/status":
+		return m, m.presenceCmd(fields, text)
 	case "/attach":
 		return m, m.attachCmd(text)
 	case "/dm":
@@ -542,7 +561,7 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	case "/quit":
 		return m, tea.Quit
 	case "/logout":
-		if err := logout(); err != nil {
+		if err := errors.Join(logout(), wipeStore()); err != nil {
 			m.status = errStyle.Render(err.Error())
 			return m, nil
 		}
@@ -641,8 +660,11 @@ func fuzzy(pattern, s string) bool {
 }
 
 func (m *model) open(i int) tea.Cmd {
+	m.saveDraft()
+	stash := m.stash()
 	m.cur = i
 	m.threads = nil
+	m.loading, m.arrived = false, nil
 	m.cursor = -1 // add moves it onto the first thread to arrive
 	m.newBelow = 0
 	if m.editing != nil {
@@ -654,11 +676,27 @@ func (m *model) open(i int) tea.Cmd {
 	lastRead := m.spaces[i].lastRead
 	m.spaces[i].lastRead = "" // stale once opened, so fetch it next time
 	m.setThread(nil)
-	m.status = "loading…"
-	cmds := []tea.Cmd{m.loadMessages(m.spaces[i].name, lastRead)}
+	m.loadDraft()
+	cmds := []tea.Cmd{stash}
 	if m.members[m.spaces[i].name] == nil {
 		cmds = append(cmds, m.loadMembers(m.spaces[i].name))
 	}
+	if m.restore(m.spaces[i].name) {
+		// Current from memory: no fetch, only the read marker.
+		m.status = ""
+		m.render()
+		cmds = append(cmds, m.markRead(m.spaces[i].name), m.imgs.fetch(m.ctx, m.c, rootsOf(m.threads)))
+		return tea.Batch(cmds...)
+	}
+	m.loading = true
+	m.status = "loading…"
+	if m.threads != nil {
+		m.status = "refreshing…"
+	}
+	m.render()
+	// The disk snapshot shown meanwhile carries last session's thread read
+	// times.
+	cmds = append(cmds, m.loadMessages(m.spaces[i].name, lastRead, threadReads(m.threads)))
 	return tea.Batch(cmds...)
 }
 
@@ -704,7 +742,8 @@ func (m *model) target() *thread {
 	return nil
 }
 
-func (m model) markRead(space string) tea.Cmd {
+func (m *model) markRead(space string) tea.Cmd {
+	m.noteRead(space, time.Now().UTC().Format(time.RFC3339Nano))
 	return func() tea.Msg {
 		if err := m.c.markRead(m.ctx, space); err != nil {
 			log.Printf("mark read %s: %v", space, err)
@@ -813,6 +852,9 @@ func (m *model) add(msg *chat.Message) {
 	if m.replace(msg) {
 		return
 	}
+	if m.loading {
+		m.arrived = append(m.arrived, msg)
+	}
 	name := threadName(msg)
 	if i := slices.IndexFunc(m.threads, func(t *thread) bool { return t.name == name }); i >= 0 {
 		t := m.threads[i]
@@ -835,14 +877,7 @@ func (m *model) add(msg *chat.Message) {
 
 // find locates a message by name in the open space.
 func (m *model) find(name string) (ti, mi int, ok bool) {
-	for ti, t := range m.threads {
-		for mi, msg := range t.msgs {
-			if msg.Name == name {
-				return ti, mi, true
-			}
-		}
-	}
-	return 0, 0, false
+	return findMsg(m.threads, name)
 }
 
 // replace swaps in an edited message and reports whether it was shown.
@@ -992,6 +1027,9 @@ func (m model) View() tea.View {
 	} else {
 		title += " " + dimStyle.Render("○ offline")
 	}
+	if p := presenceLabel(m.presence); p != "" {
+		title += " " + p
+	}
 	unread := 0
 	for i, s := range m.spaces {
 		if s.unread && !s.hidden && i != m.cur {
@@ -1073,6 +1111,9 @@ func (m model) switcherView() string {
 		}
 		if sec := m.spaces[i].section; sec != "" {
 			title += dimStyle.Render(" · " + sec)
+		}
+		if m.hasDraft(m.spaces[i].name) {
+			title += dimStyle.Render(" ✎")
 		}
 		if j == m.pick {
 			lines = append(lines, selStyle.Render("› ")+title)

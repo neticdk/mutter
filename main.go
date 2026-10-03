@@ -44,13 +44,15 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	c, err := newClient(ctx, ts)
+	hc := apiClient(ctx, ts)
+	defer logAPICalls(hc)
+	c, err := newClient(ctx, hc)
 	if err != nil {
 		return err
 	}
 	ch := make(chan tea.Msg, 64)
 	if cfg.Topic != "" {
-		go runEvents(ctx, ts, c, cfg.Topic, ch)
+		go runEvents(ctx, hc, c, cfg.Topic, ch)
 	} else {
 		ch <- liveMsg{errors.New("no topic configured, live updates off")}
 	}
@@ -64,8 +66,25 @@ func run() error {
 		defer f.Close()
 		opts = append(opts, tea.WithOutput(teeFile{os.Stdout, f}))
 	}
-	_, err = tea.NewProgram(newModel(ctx, c, ch), opts...).Run()
+	mdl := newModel(ctx, c, ch)
+	if st, err := openStore(c.me); err != nil {
+		log.Printf("cache: %v, running without it", err)
+	} else {
+		mdl.store, mdl.imgs.store = st, st
+		go func() {
+			if err := errors.Join(st.prune("msgs", maxMessageCache), st.prune("img", maxImageCache)); err != nil {
+				log.Printf("cache prune: %v", err)
+			}
+		}()
+	}
+	final, err := tea.NewProgram(mdl, opts...).Run()
 	fmt.Print(kittyClear)
+	if fm, ok := final.(model); ok {
+		fm.saveDraft() // the context open at exit
+		if write := fm.stash(); write != nil {
+			write()
+		}
+	}
 	return err
 }
 

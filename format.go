@@ -17,7 +17,10 @@ var (
 	italicStyle = lipgloss.NewStyle().Italic(true)
 	strikeStyle = lipgloss.NewStyle().Strikethrough(true)
 	codeStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
-	dimStyle    = lipgloss.NewStyle().Faint(true)
+	// A bar marks fenced code blocks, and reads on light and dark themes
+	// alike, unlike a background color.
+	codeBlockStyle = codeStyle.Border(lipgloss.ThickBorder(), false, false, false, true).BorderForeground(lipgloss.Color("8")).PaddingLeft(1)
+	dimStyle       = lipgloss.NewStyle().Faint(true)
 )
 
 // Chat markers only apply at word boundaries, so "a*b*c" and "snake_case_name"
@@ -65,7 +68,11 @@ func formatText(s string) string {
 	var b strings.Builder
 	for i, block := range strings.Split(s, "```") {
 		if i%2 == 1 {
-			b.WriteString(codeStyle.Render(strings.Trim(block, "\n")))
+			// A block starts on its own line even when the fence doesn't.
+			if b.Len() > 0 && !strings.HasSuffix(b.String(), "\n") {
+				b.WriteString("\n")
+			}
+			b.WriteString(codeBlockStyle.Render(strings.Trim(block, "\n")))
 			continue
 		}
 		for j, part := range strings.Split(block, "`") {

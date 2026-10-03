@@ -16,7 +16,6 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"golang.org/x/oauth2"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/chat/v1"
 	"google.golang.org/api/googleapi"
@@ -89,13 +88,13 @@ type events struct {
 
 // runEvents delivers Chat events into out until ctx ends, resubscribing after
 // errors.
-func runEvents(ctx context.Context, ts oauth2.TokenSource, c *client, topic string, out chan<- tea.Msg) {
-	ws, err := workspaceevents.NewService(ctx, option.WithTokenSource(ts))
+func runEvents(ctx context.Context, hc *http.Client, c *client, topic string, out chan<- tea.Msg) {
+	ws, err := workspaceevents.NewService(ctx, option.WithHTTPClient(hc))
 	if err != nil {
 		out <- liveMsg{err}
 		return
 	}
-	ps, err := pubsub.NewService(ctx, option.WithTokenSource(ts))
+	ps, err := pubsub.NewService(ctx, option.WithHTTPClient(hc))
 	if err != nil {
 		out <- liveMsg{err}
 		return

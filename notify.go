@@ -24,17 +24,67 @@ type readInfo struct {
 	lastRead      string
 }
 
+// readTimesFile is readtimes.json: when the user last read each space, as
+// mutter last learned it. A space with no activity since can't be unread,
+// so startup skips looking it up. Times belong to the logged-in user.
+type readTimesFile struct {
+	User  string            `json:"user"`
+	Times map[string]string `json:"times"`
+}
+
+func loadReadTimes(user string) map[string]string {
+	var f readTimesFile
+	if err := readCache("readtimes.json", &f); err != nil || f.User != user || f.Times == nil {
+		return map[string]string{}
+	}
+	return f.Times
+}
+
+// noteRead records that the user read space at lastRead.
+func (m *model) noteRead(space, lastRead string) {
+	if lastRead == "" || m.readTimes[space] == lastRead {
+		return
+	}
+	m.readTimes[space] = lastRead
+	m.saveReadTimes()
+}
+
+// forgetRead drops space's read time, so the next start looks it up.
+func (m *model) forgetRead(space string) {
+	delete(m.readTimes, space)
+	m.saveReadTimes()
+}
+
+func (m *model) saveReadTimes() {
+	if err := writeCache("readtimes.json", readTimesFile{User: m.c.me, Times: m.readTimes}); err != nil {
+		log.Printf("read times: %v", err)
+	}
+}
+
+// needsReadState reports whether startup has to look up s's read state:
+// visible, active within unreadWindow, and with activity after its known
+// read time, if any.
+func needsReadState(s space, known map[string]string, cutoff string) bool {
+	if s.hidden || s.lastActive < cutoff {
+		return false
+	}
+	// ponytail: a space marked unread on another device while mutter was closed shows as read until its next activity. Live read-state events cover it while mutter runs.
+	r, ok := known[s.name]
+	return !ok || isUnread(s.lastActive, r)
+}
+
 // unread reports which of spaces have activity after the user last read
-// them. Unread spaces also get their mute setting, since the web client
-// doesn't show muted spaces as unread.
-func (c *client) unread(ctx context.Context, spaces []space) map[string]readInfo {
+// them. Spaces whose known read time covers their last activity are read
+// without a lookup. Unread spaces also get their mute setting, since the
+// web client doesn't show muted spaces as unread.
+func (c *client) unread(ctx context.Context, spaces []space, known map[string]string) map[string]readInfo {
 	cutoff := time.Now().Add(-unreadWindow).UTC().Format(time.RFC3339)
 	out := map[string]readInfo{}
 	var mu sync.Mutex
 	var g errgroup.Group
 	g.SetLimit(8)
 	for _, s := range spaces {
-		if s.hidden || s.lastActive < cutoff {
+		if !needsReadState(s, known, cutoff) {
 			continue
 		}
 		g.Go(func() error {
@@ -89,13 +139,21 @@ func (c *client) readState(ctx context.Context, space string) (string, error) {
 // markNew flags what's new in threads for someone who last read the space
 // at spaceRead. Threads with replies use their own read state, because Chat
 // tracks thread replies separately from the space.
-func (c *client) markNew(ctx context.Context, threads []*thread, spaceRead string) {
+//
+// known holds thread read times from the last session. A thread with no
+// activity since its known read time has nothing new, so it needs no lookup.
+func (c *client) markNew(ctx context.Context, threads []*thread, spaceRead string, known map[string]string) {
 	cutoff := time.Now().Add(-unreadWindow).UTC().Format(time.RFC3339)
 	var g errgroup.Group
 	g.SetLimit(8)
 	for _, t := range threads {
 		t.readAt = spaceRead
 		if len(t.msgs) == 1 || t.last() < cutoff {
+			c.countNew(t, spaceRead)
+			continue
+		}
+		if r, ok := known[t.name]; ok && !isUnread(t.last(), r) {
+			t.readAt = r
 			c.countNew(t, spaceRead)
 			continue
 		}

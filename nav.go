@@ -5,6 +5,7 @@ import (
 	"log"
 	"slices"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"google.golang.org/api/chat/v1"
@@ -50,7 +51,7 @@ func (m *model) loadOlder() tea.Cmd {
 		if err != nil {
 			return errMsg(err)
 		}
-		m.c.markNew(m.ctx, threads, read)
+		m.c.markNew(m.ctx, threads, read, nil)
 		return olderMsg{space, threads, next}
 	}
 }
@@ -77,11 +78,7 @@ func (m *model) addOlder(msg olderMsg) tea.Cmd {
 		m.cursor-- // step onto the newest of the older threads
 	}
 	m.render()
-	var roots []*chat.Message
-	for _, t := range older {
-		roots = append(roots, t.msgs[0])
-	}
-	return m.imgs.fetch(m.ctx, m.c, roots)
+	return m.imgs.fetch(m.ctx, m.c, rootsOf(older))
 }
 
 func (m model) fetchSpace(name string, open bool, msg *chat.Message) tea.Cmd {
@@ -122,7 +119,8 @@ func (m *model) applySpace(msg spaceInfoMsg) tea.Cmd {
 	}
 	if m.titles != nil && !strings.HasPrefix(msg.space.title, "spaces/") {
 		m.titles[msg.name] = msg.space.title
-		if err := saveTitleCache(m.c.me, m.titles); err != nil {
+		m.titleChecked[msg.name] = time.Now().Unix()
+		if err := saveTitleCache(m.c.me, m.titles, m.titleChecked); err != nil {
 			log.Printf("title cache: %v", err)
 		}
 	}

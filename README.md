@@ -10,6 +10,9 @@ Terminal client for Google Chat, for Workspace organizations.
 - Unread state synced with the web client, muted spaces respected
 - Desktop notifications following each space's notification setting
 - Reactions, edits, deletes, quotes and @mention completion
+- Do Not Disturb, away and status from the input line
+- Drafts kept per space and thread, across restarts
+- Spaces and images cached locally and encrypted, so switching spaces and restarting are fast
 - Cards rendered as text, images and animated GIFs drawn in the terminal
 - File upload, download and open
 
@@ -177,7 +180,7 @@ To use a different OAuth client, for example during development, write it to `~/
 |---|---|
 | enter | send, or open the selected thread when the input is empty |
 | shift+enter, alt+enter, ctrl+j | newline |
-| ctrl+k | switch space. The filter matches names and sidebar sections. |
+| ctrl+k | switch space. The filter matches names and sidebar sections, and `✎` marks spaces with a draft. |
 | ↑ ↓ with an empty input | select a thread, or a message inside a thread |
 | ↑ on the oldest thread | load older history |
 | pgup, pgdown | scroll |
@@ -207,10 +210,23 @@ While a thread or message is selected, letter keys act on it. Any other key goes
 | `/open [n]` | open file `n` of the selected or open thread, the last one by default |
 | `/save [n]` | save file `n` to `~/Downloads` |
 | `/unread` | mark the space unread from the selected or open thread onward |
-| `/logout` | delete the stored token and quit |
+| `/dnd [DURATION]` | Do Not Disturb, for an hour or a duration such as `30m` or `2h` |
+| `/away` | show as away until you're active again |
+| `/active [DURATION]` | show as active, back to activity-based after `DURATION` |
+| `/status [EMOJI] [TEXT]` | set your status, with 💬 when no emoji is given. Without text, it's cleared. |
+| `/logout` | delete the stored token and the local cache, and quit |
 | `/quit` | quit |
 
 Saved files get the macOS quarantine attribute, so Gatekeeper checks them before they run. Leading dots are stripped from their names, so a file can't land as a hidden dotfile. `/save` creates `~/Downloads` when it's missing. `/open` downloads into mutter's directory in the user cache dir. `/open` only follows http and https links, and only http and https links in cards are clickable.
+
+### Local cache
+
+mutter keeps spaces and processed images in the user cache directory, `~/Library/Caches/mutter/store` on macOS:
+
+- **Encryption**: files are encrypted with AES-GCM. The key is in the OS keychain next to the login token, so a copied cache file can't be read.
+- **Size**: spaces are capped at 50 MB and images at 200 MB. The least recently used are removed at startup.
+- **Freshness**: while live updates run, a space opened earlier in the session shows from memory with no fetch. After a restart, a space shows its cached copy, marked `refreshing…`, until the fresh load replaces it.
+- **Removal**: `/logout` deletes the cache and its key.
 
 ### Permissions
 
@@ -226,6 +242,7 @@ The first run asks the user to grant these OAuth scopes. mutter asks again whene
 | `chat.users.readstate` | unread state |
 | `chat.users.spacesettings` | notification and mute settings |
 | `chat.users.sections.readonly` | sidebar sections |
+| `chat.users.availability` | your Do Not Disturb, away state and status |
 | `pubsub` | pulling live events |
 
 ## Limitations
@@ -237,12 +254,14 @@ Planned improvements are in [ROADMAP.md](ROADMAP.md). The ones under Chat API ca
 - Opening a thread clears its markers only in mutter. The API can read a thread's read state but not write it.
 - `FOR_YOU` notifications fire on @mentions only. The API doesn't expose which threads you follow.
 - Card buttons that call Chat apps don't work, and interactive card widgets are skipped. Both need app authentication.
+- Other people's presence isn't shown. The API only returns the user's own availability.
 
 ### Reading
 
 - Opening a space marks all of it read, as the web client does, however far you scroll.
 - At startup, spaces with no activity for 30 days count as read.
 - History loads 200 messages at a time.
+- Without live updates, every space switch fetches again, since nothing keeps the cached copy current.
 - There's no message search.
 - DMs and group chats whose other members have all left the organization are hidden.
 - Only one account at a time.
@@ -299,7 +318,7 @@ MUTTER_DEBUG=/tmp/mutter-debug ./mutter
 
 This writes to the directory:
 
-- `mutter.log`: API errors, raw spaces, memberships and events, image decoding
+- `mutter.log`: API errors, raw spaces, memberships and events, image decoding, and at exit the number of API calls per method
 - `tty.out`: every byte sent to the terminal. It grows fast while GIFs animate, so keep runs short.
 
 ## License

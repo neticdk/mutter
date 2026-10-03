@@ -33,6 +33,7 @@ var scopes = []string{
 	chat.ChatUsersReadstateScope,
 	chat.ChatUsersSpacesettingsScope,
 	chat.ChatUsersSectionsReadonlyScope,
+	chat.ChatUsersAvailabilityScope,
 	chat.ChatSpacesCreateScope,
 	pubsub.PubsubScope,
 }
