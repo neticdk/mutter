@@ -21,7 +21,13 @@ type (
 		space space
 		name  string
 		gone  bool
-		open  bool // open it once known, for /dm
+		open  bool          // open it once known, for /dm
+		msg   *chat.Message // handle it once known, for a new space
+	}
+	// threadMsg carries every message of a thread, oldest first.
+	threadMsg struct {
+		name string
+		msgs []*chat.Message
 	}
 	sectionsMsg map[string]string
 )
@@ -77,13 +83,23 @@ func (m *model) addOlder(msg olderMsg) tea.Cmd {
 	return m.imgs.fetch(m.ctx, m.c, roots)
 }
 
-func (m model) fetchSpace(name string, open bool) tea.Cmd {
+func (m model) fetchSpace(name string, open bool, msg *chat.Message) tea.Cmd {
 	return func() tea.Msg {
 		s, gone, err := m.c.getSpace(m.ctx, name)
 		if err != nil {
 			return errMsg(err)
 		}
-		return spaceInfoMsg{space: s, name: name, gone: gone, open: open}
+		return spaceInfoMsg{space: s, name: name, gone: gone, open: open, msg: msg}
+	}
+}
+
+func (m model) fetchThread(space, name string) tea.Cmd {
+	return func() tea.Msg {
+		msgs, err := m.c.threadMessages(m.ctx, space, name)
+		if err != nil {
+			return errMsg(err)
+		}
+		return threadMsg{name, msgs}
 	}
 }
 
@@ -114,6 +130,9 @@ func (m *model) applySpace(msg spaceInfoMsg) tea.Cmd {
 	}
 	if msg.open {
 		return m.open(i)
+	}
+	if msg.msg != nil {
+		return m.incoming(msg.msg)
 	}
 	return nil
 }

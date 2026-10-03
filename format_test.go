@@ -17,6 +17,7 @@ func TestFormatText(t *testing.T) {
 		{"2*3*4", "2*3*4"},
 		{"* not bold *", "* not bold *"},
 		{"(*x*)", "(" + b("x") + ")"},
+		{"*a* *b*", b("a") + " " + b("b")},
 		{"`*raw*`", c("*raw*")},
 		{"```\nfn *x*\n```", c("fn *x*")},
 	}

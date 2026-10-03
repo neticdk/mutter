@@ -146,16 +146,23 @@ func login(ctx context.Context, cfg *oauth2.Config) (*oauth2.Token, error) {
 	ch := make(chan result, 1)
 	srv := &http.Server{ReadHeaderTimeout: 10 * time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
-		switch {
-		case q.Get("state") != state:
-			http.Error(w, "state mismatch", http.StatusBadRequest)
-			ch <- result{err: errors.New("oauth state mismatch")}
-		case q.Get("error") != "":
-			http.Error(w, q.Get("error"), http.StatusBadRequest)
-			ch <- result{err: fmt.Errorf("oauth: %s", q.Get("error"))}
-		default:
+		// Only the redirect carries our state. Browsers also ask for
+		// /favicon.ico, and any local process can reach the port.
+		if r.URL.Path != "/" || q.Get("state") != state {
+			http.NotFound(w, r)
+			return
+		}
+		res := result{code: q.Get("code")}
+		if e := q.Get("error"); e != "" {
+			http.Error(w, e, http.StatusBadRequest)
+			res = result{err: fmt.Errorf("oauth: %s", e)}
+		} else {
 			fmt.Fprintln(w, "mutter is logged in. You can close this tab.")
-			ch <- result{code: q.Get("code")}
+		}
+		// A repeated redirect finds the channel full and is dropped.
+		select {
+		case ch <- res:
+		default:
 		}
 	})}
 	// Serve returns ErrServerClosed once the login finishes.

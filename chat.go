@@ -252,11 +252,7 @@ func (c *client) threads(ctx context.Context, space string, n int64, pageToken s
 			continue
 		}
 		g.Go(func() error {
-			var msgs []*chat.Message
-			err := c.svc.Spaces.Messages.List(space).Filter("thread.name = "+t.name).PageSize(1000).Pages(gctx, func(r *chat.ListMessagesResponse) error {
-				msgs = append(msgs, r.Messages...)
-				return nil
-			})
+			msgs, err := c.threadMessages(gctx, space, t.name)
 			if err != nil {
 				return err
 			}
@@ -270,6 +266,16 @@ func (c *client) threads(ctx context.Context, space string, n int64, pageToken s
 
 	slices.SortStableFunc(out, func(a, b *thread) int { return strings.Compare(a.msgs[0].CreateTime, b.msgs[0].CreateTime) })
 	return out, r.NextPageToken, nil
+}
+
+// threadMessages fetches every message in thread, oldest first.
+func (c *client) threadMessages(ctx context.Context, space, thread string) ([]*chat.Message, error) {
+	var msgs []*chat.Message
+	err := c.svc.Spaces.Messages.List(space).Filter("thread.name = "+thread).PageSize(1000).Pages(ctx, func(r *chat.ListMessagesResponse) error {
+		msgs = append(msgs, r.Messages...)
+		return nil
+	})
+	return msgs, err
 }
 
 // groupThreads groups msgs, oldest first, by thread in order of first

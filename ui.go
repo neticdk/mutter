@@ -320,10 +320,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case messagesMsg:
 		if m.cur >= 0 && m.spaces[m.cur].name == msg.space {
+			live := m.threads
 			m.threads = msg.threads
 			m.cursor = len(m.threads) - 1
 			m.olderToken, m.openRead = msg.next, msg.lastRead
 			m.status = ""
+			// Messages that arrived while the space loaded may postdate the
+			// fetch.
+			for _, t := range live {
+				for _, x := range t.msgs {
+					if _, _, ok := m.find(x.Name); !ok {
+						m.add(x)
+					}
+				}
+			}
 			m.render()
 			var roots []*chat.Message
 			for _, t := range m.threads {
@@ -372,7 +382,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case spaceChangedMsg:
-		return m, m.fetchSpace(msg.space, false)
+		return m, m.fetchSpace(msg.space, false, nil)
+
+	case threadMsg:
+		if i := slices.IndexFunc(m.threads, func(t *thread) bool { return t.name == msg.name }); i >= 0 && len(msg.msgs) > 0 {
+			t := m.threads[i]
+			// Keep replies that arrived while the thread was fetched.
+			for _, x := range t.msgs {
+				if !slices.ContainsFunc(msg.msgs, func(y *chat.Message) bool { return y.Name == x.Name }) {
+					msg.msgs = append(msg.msgs, x)
+				}
+			}
+			t.msgs = msg.msgs
+			m.render()
+			return m, m.imgs.fetch(m.ctx, m.c, msg.msgs[:1])
+		}
+		return m, nil
 
 	case spaceInfoMsg:
 		return m, m.applySpace(msg)
@@ -388,6 +413,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case errMsg:
 		log.Printf("error: %v", msg)
+		m.loadingOlder = false // a failed page would otherwise block older history
 		m.status = errStyle.Render(msg.Error())
 		return m, nil
 
@@ -442,8 +468,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.render()
 			return m, nil
 		case "enter":
-			if m.ta.Value() == "" && m.inThread == nil && len(m.threads) > 0 {
-				t := m.threads[m.cursor]
+			if t := m.target(); m.ta.Value() == "" && m.inThread == nil && t != nil {
 				m.setThread(t)
 				return m, m.imgs.fetch(m.ctx, m.c, t.msgs)
 			}
@@ -554,7 +579,7 @@ func (m model) updateSwitcher(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.pick = max(0, m.pick-1)
 		return m, nil
 	case "down", "ctrl+n":
-		m.pick = min(len(m.matches)-1, m.pick+1)
+		m.pick = max(0, min(len(m.matches)-1, m.pick+1))
 		return m, nil
 	case "enter":
 		m.switching = false
@@ -613,7 +638,12 @@ func fuzzy(pattern, s string) bool {
 func (m *model) open(i int) tea.Cmd {
 	m.cur = i
 	m.threads = nil
+	m.cursor = -1 // add moves it onto the first thread to arrive
 	m.newBelow = 0
+	if m.editing != nil {
+		m.ta.Reset()
+	}
+	m.editing, m.quoting = nil, nil
 	m.spaces[i].unread = false
 	m.holdRead = false
 	lastRead := m.spaces[i].lastRead
@@ -688,14 +718,21 @@ func (m *model) spaceIndex(name string) int {
 func (m *model) incoming(msg *chat.Message) tea.Cmd {
 	i := m.spaceIndex(spaceOf(msg.Name))
 	if i < 0 {
-		return nil
+		// The first message in a new space can beat the membership event.
+		return m.fetchSpace(spaceOf(msg.Name), false, msg)
 	}
 	m.spaces[i].lastActive = msg.CreateTime
 	own := msg.Sender != nil && msg.Sender.Name == m.c.meID
+	name := threadName(msg)
+	known := slices.ContainsFunc(m.threads, func(t *thread) bool { return t.name == name })
 	m.add(msg)
 	var cmds []tea.Cmd
 	if i == m.cur {
 		cmds = append(cmds, m.imgs.fetch(m.ctx, m.c, []*chat.Message{msg}))
+		if msg.ThreadReply && !known {
+			// A reply to a thread outside the loaded history needs its root.
+			cmds = append(cmds, m.fetchThread(spaceOf(msg.Name), name))
+		}
 	}
 	if own {
 		return tea.Batch(cmds...)
@@ -822,8 +859,17 @@ func (m *model) remove(name string) {
 	}
 	t := m.threads[ti]
 	t.msgs = slices.Delete(t.msgs, mi, mi+1)
+	if t == m.inThread {
+		if mi < m.msgCursor {
+			m.msgCursor-- // stay on the selected message
+		}
+		m.msgCursor = min(m.msgCursor, len(t.msgs)-1)
+	}
 	if len(t.msgs) == 0 {
 		m.threads = slices.Delete(m.threads, ti, ti+1)
+		if ti < m.cursor {
+			m.cursor-- // stay on the selected thread
+		}
 		m.cursor = min(m.cursor, max(0, len(m.threads)-1))
 		if m.inThread == t {
 			m.setThread(nil)
@@ -884,9 +930,10 @@ func (m *model) setBlocks(blocks []string, sel int) {
 			continue
 		}
 		blocks[i] = cursorStyle.Render(b)
-		top = lipgloss.Height(strings.Join(blocks[:i], "\n\n"))
 		if i > 0 {
-			top++ // the blank separator line
+			// lipgloss.Height counts "" as one line, so the first block is
+			// left at 0. The +1 is the blank separator line.
+			top = lipgloss.Height(strings.Join(blocks[:i], "\n\n")) + 1
 		}
 		bottom = top + lipgloss.Height(blocks[i])
 	}
@@ -906,13 +953,7 @@ func newDot() string { return liveStyle.Render("● ") }
 
 // message renders msg's sender, time and body.
 func (m *model) message(msg *chat.Message, num *int) string {
-	name := ""
-	if msg.Sender != nil {
-		name = msg.Sender.DisplayName
-		if name == "" {
-			name = msg.Sender.Name
-		}
-	}
+	name := senderName(msg)
 	body := lipgloss.NewStyle().Width(max(1, m.width-4)).Render(messageBody(msg, m.imgs.render, num))
 	return senderStyle.Render(name) + " " + dimStyle.Render(when(msg.CreateTime)) + "\n" + body
 }

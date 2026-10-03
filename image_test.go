@@ -6,6 +6,8 @@ import (
 	"image/color"
 	"image/gif"
 	"image/png"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -50,6 +52,41 @@ func TestFormatTextDropsControls(t *testing.T) {
 	}
 	if got := stripC1("a\u009b2J\x1b[1mb"); got != "a2J\x1b[1mb" {
 		t.Errorf("stripC1 = %q", got)
+	}
+}
+
+func TestGIFPrefix(t *testing.T) {
+	pal := color.Palette{color.Black, color.White}
+	g := &gif.GIF{Delay: []int{0, 0, 0}}
+	for range 3 {
+		g.Image = append(g.Image, image.NewPaletted(image.Rect(0, 0, 2, 2), pal))
+	}
+	var buf bytes.Buffer
+	if err := gif.EncodeAll(&buf, g); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []int{1, 2, 3, 5} {
+		got, err := gif.DecodeAll(bytes.NewReader(gifPrefix(buf.Bytes(), n)))
+		if err != nil {
+			t.Fatalf("n=%d: %v", n, err)
+		}
+		if want := min(n, 3); len(got.Image) != want {
+			t.Errorf("n=%d: %d frames, want %d", n, len(got.Image), want)
+		}
+	}
+	if got := gifPrefix([]byte("GIF89a\x01\x00\x01\x00\x00\x00\x00junk"), 1); len(got) != 0 {
+		t.Errorf("unwalkable GIF kept %d bytes", len(got))
+	}
+}
+
+func TestDownloadRejectsHugeImage(t *testing.T) {
+	// A header declaring 65535x65535 pixels, which would decode to gigabytes.
+	data := []byte("GIF89a\xff\xff\xff\xff\x00\x00\x00;")
+	msg := download("ref", func() (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Status: "200 OK", Body: io.NopCloser(bytes.NewReader(data))}, nil
+	}, layout{8, 16, 60, 20})
+	if msg.err == nil {
+		t.Fatal("huge image accepted")
 	}
 }
 
