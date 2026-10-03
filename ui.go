@@ -97,9 +97,12 @@ type model struct {
 	newBelow int    // threads that arrived below the cursor
 	notice   string // shown in place of the hints until the next key press
 	help     bool   // the ? overlay covers the messages
-	giphyKey string // from GIPHY_API_KEY, empty turns /gif off
-	gifs     []gifResult
-	gifIdx   int // selected GIF in the picker
+	// helpByKey means ? opened the overlay, so typing on puts the ? in the
+	// input.
+	helpByKey bool
+	giphyKey  string // from GIPHY_API_KEY, empty turns /gif off
+	gifs      []gifResult
+	gifIdx    int // selected GIF in the picker
 
 	// Message actions. selecting means arrows picked a message, so letter
 	// keys act on it.
@@ -522,14 +525,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.jump(n)
 		}
 		if m.help {
+			// Typing closes the overlay and goes on to the input, so a
+			// message can start with ?.
 			m.help = false
-			return m, nil
+			if msg.Text == "" {
+				return m, nil
+			}
+			if m.helpByKey {
+				m.ta.InsertString("?")
+			}
 		}
 		if m.mode != "" {
 			return m.updateMode(msg)
 		}
 		if msg.String() == "?" && m.ta.Value() == "" {
-			m.help = true
+			m.help, m.helpByKey = true, true
 			return m, nil
 		}
 		if m.selecting && m.ta.Value() == "" {
@@ -658,7 +668,7 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	}
 	switch text {
 	case "/help":
-		m.help = true
+		m.help, m.helpByKey = true, false
 		return m, nil
 	case "/quit":
 		return m, tea.Quit

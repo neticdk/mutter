@@ -191,7 +191,7 @@ To use a different OAuth client, for example during development, write it to `~/
 | pgup, pgdown | scroll |
 | tab, shift+tab | complete an @mention, a `/dm` argument or a `:shortcode`. Repeated presses cycle through the suggestions. |
 | esc | cancel editing or quoting, end selection, leave the thread |
-| ? with an empty input | show keys and commands. Any key closes it. |
+| ? with an empty input | show keys and commands. Any key closes it, and typed characters, the `?` included, go to the input. |
 
 While a thread or message is selected, letter keys act on it. Any other key goes to the input.
 

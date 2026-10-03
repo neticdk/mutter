@@ -255,11 +255,18 @@ func TestFlowHelp(t *testing.T) {
 	fl.typeText("/help")
 	fl.key(tea.KeyEnter)
 	fl.see("/status [EMOJI] [TEXT]")
-	fl.key('x')
+	fl.key(tea.KeyEscape)
 	fl.waitFor(func() bool { return !strings.Contains(fl.screen(), "any key closes") }, "the overlay to close")
 
 	// In text, ? is just a character.
 	fl.typeText("why?")
 	fl.key(tea.KeyEnter)
 	fl.sent("spaces/A", "why?")
+
+	// Typing on after ? keeps the ?, so a message can start with one.
+	fl.typeText("?")
+	fl.see("any key closes")
+	fl.typeText("?ok")
+	fl.key(tea.KeyEnter)
+	fl.sent("spaces/A", "??ok")
 }
