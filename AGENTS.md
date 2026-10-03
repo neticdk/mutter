@@ -20,7 +20,7 @@ Everything is one `main` package, split into files by concern:
 | `compose.go` | completion for @mentions, `/dm` and emoji, `/attach` |
 | `emoji.go` | emoji shortcodes: search, completion and expansion |
 | `sidebar.go` | the optional sidebar and saved preferences |
-| `help.go` | the `?` overlay with keys and commands |
+| `help.go` | the help overlay with keys and commands |
 | `gif.go` | GIPHY search and the `/gif` picker |
 | `paste.go` | images from the clipboard or dropped files, sent with the next message |
 | `nav.go` | older history, live spaces, `/dm`, sections |

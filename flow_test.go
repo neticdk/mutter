@@ -245,30 +245,25 @@ func TestFlowHelp(t *testing.T) {
 	fl := startFlow(t, f)
 	fl.see("Deploy is blocked")
 
-	// ? on an empty input opens the overlay, and any key closes it.
-	fl.typeText("?")
+	// F1 opens the overlay, and any key closes it.
+	fl.key(tea.KeyF1)
 	fl.see("any key closes")
 	fl.key(tea.KeyEscape)
 	fl.waitFor(func() bool { return !strings.Contains(fl.screen(), "any key closes") }, "the overlay to close")
 	fl.see("Deploy is blocked")
 
+	// Typing closes /help and goes to the input.
 	fl.typeText("/help")
 	fl.key(tea.KeyEnter)
 	fl.see("/status [EMOJI] [TEXT]")
-	fl.key(tea.KeyEscape)
-	fl.waitFor(func() bool { return !strings.Contains(fl.screen(), "any key closes") }, "the overlay to close")
-
-	// In text, ? is just a character.
-	fl.typeText("why?")
+	fl.typeText("ok")
 	fl.key(tea.KeyEnter)
-	fl.sent("spaces/A", "why?")
+	fl.sent("spaces/A", "ok")
 
-	// Typing on after ? keeps the ?, so a message can start with one.
+	// ? is just a character, also as a whole message.
 	fl.typeText("?")
-	fl.see("any key closes")
-	fl.typeText("?ok")
 	fl.key(tea.KeyEnter)
-	fl.sent("spaces/A", "??ok")
+	fl.sent("spaces/A", "?")
 }
 
 func TestFlowFailedSendKeepsText(t *testing.T) {

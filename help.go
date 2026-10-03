@@ -21,6 +21,7 @@ var (
 		{"alt+1…9 ctrl+1…9", "open a sidebar entry"},
 		{"ctrl+v", "paste an image"},
 		{"ctrl+x", "drop the last pending image"},
+		{"f1", "this help, also /help"},
 		{"ctrl+c", "quit"},
 		{"", ""},
 		{"selected message", ""},

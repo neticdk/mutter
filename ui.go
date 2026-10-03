@@ -96,13 +96,10 @@ type model struct {
 	holdRead bool   // /unread was used, so don't mark the open space read
 	newBelow int    // threads that arrived below the cursor
 	notice   string // shown in place of the hints until the next key press
-	help     bool   // the ? overlay covers the messages
-	// helpByKey means ? opened the overlay, so typing on puts the ? in the
-	// input.
-	helpByKey bool
-	giphyKey  string // from GIPHY_API_KEY, empty turns /gif off
-	gifs      []gifResult
-	gifIdx    int // selected GIF in the picker
+	help     bool   // the help overlay covers the messages
+	giphyKey string // from GIPHY_API_KEY, empty turns /gif off
+	gifs     []gifResult
+	gifIdx   int // selected GIF in the picker
 
 	// Message actions. selecting means arrows picked a message, so letter
 	// keys act on it.
@@ -530,21 +527,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.jump(n)
 		}
 		if m.help {
-			// Typing closes the overlay and goes on to the input, so a
-			// message can start with ?.
+			// Typing closes the overlay and goes on to the input.
 			m.help = false
 			if msg.Text == "" {
 				return m, nil
-			}
-			if m.helpByKey {
-				m.ta.InsertString("?")
 			}
 		}
 		if m.mode != "" {
 			return m.updateMode(msg)
 		}
-		if msg.String() == "?" && m.ta.Value() == "" {
-			m.help, m.helpByKey = true, true
+		if msg.String() == "f1" {
+			m.help = true
 			return m, nil
 		}
 		if m.selecting && m.ta.Value() == "" {
@@ -673,7 +666,7 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	}
 	switch text {
 	case "/help":
-		m.help, m.helpByKey = true, false
+		m.help = true
 		return m, nil
 	case "/quit":
 		return m, tea.Quit
@@ -1191,13 +1184,13 @@ func (m model) View() tea.View {
 	if unread > 0 {
 		title += " " + boldStyle.Render(fmt.Sprintf("· %d unread %s", unread, plural(unread, "space", "spaces")))
 	}
-	hint := "↑/↓ select · enter open thread · type to start a thread · ctrl+k switch · ? help · /quit"
+	hint := "↑/↓ select · enter open thread · type to start a thread · ctrl+k switch · /help · /quit"
 	if m.newBelow > 0 {
 		hint = boldStyle.Render(fmt.Sprintf("↓ %d new", m.newBelow)) + dimStyle.Render(" · ") + dimStyle.Render(hint)
 	}
 	if m.inThread != nil {
 		title += " › thread"
-		hint = "enter reply · esc back · ↑/↓ scroll · ctrl+k switch · ? help · /quit"
+		hint = "enter reply · esc back · ↑/↓ scroll · ctrl+k switch · /help · /quit"
 	}
 	body := m.vp.View()
 	switch {
