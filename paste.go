@@ -87,15 +87,23 @@ func droppedFile(text string) (pending, bool) {
 }
 
 // sendWith sends text with the pending files. The first file goes with the
-// text and quote, and any more follow as their own messages.
-func (m *model) sendWith(space string, out outgoing, files []pending) tea.Cmd {
+// text and quote, and any more follow as their own messages. On a failure,
+// failed carries back what didn't go out.
+func (m *model) sendWith(space string, out outgoing, files []pending, failed sendFailedMsg) tea.Cmd {
 	m.notice = fmt.Sprintf("uploading %d %s…", len(files), plural(len(files), "file", "files"))
 	return func() tea.Msg {
 		var sent []tea.Msg
+		fail := func(i int, err error) tea.Msg {
+			failed.err, failed.files = err, files[i:]
+			if i > 0 {
+				failed.text, failed.quote, failed.mentions = "", nil, nil
+			}
+			return tea.BatchMsg{func() tea.Msg { return batchMsgs(sent) }, func() tea.Msg { return failed }}
+		}
 		for i, f := range files {
 			ref, err := m.c.uploadData(m.ctx, space, f.name, bytes.NewReader(f.data))
 			if err != nil {
-				return errMsg(fmt.Errorf("upload %s: %w", f.name, err))
+				return fail(i, fmt.Errorf("upload %s: %w", f.name, err))
 			}
 			o := outgoing{thread: out.thread, att: ref}
 			if i == 0 {
@@ -103,7 +111,7 @@ func (m *model) sendWith(space string, out outgoing, files []pending) tea.Cmd {
 			}
 			msg, err := m.c.send(m.ctx, space, o)
 			if err != nil {
-				return errMsg(err)
+				return fail(i, err)
 			}
 			sent = append(sent, sentMsg(msg))
 		}

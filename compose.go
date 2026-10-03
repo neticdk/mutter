@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -267,7 +268,9 @@ func (m model) loadMembers(space string) tea.Cmd {
 	return func() tea.Msg {
 		members, err := m.c.members(m.ctx, space)
 		if err != nil {
-			return errMsg(err)
+			// Members only feed completion, so a failure stays in the log.
+			slog.Warn("members", "space", space, "err", err)
+			return nil
 		}
 		return membersMsg{space, members}
 	}

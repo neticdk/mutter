@@ -290,6 +290,7 @@ Planned improvements are in [ROADMAP.md](ROADMAP.md). The ones under Chat API ca
 
 ### Writing
 
+- A message that fails to send goes back into the input with its images, quote and mentions. If you switched space or thread meanwhile, it becomes that thread's draft, and its images and quote are dropped.
 - An @mention notifies only when completed with tab. A typed `@name` stays plain text.
 - Editing a message sends its mentions back as plain text.
 - Several pasted images go out as one message each, with the text on the first.

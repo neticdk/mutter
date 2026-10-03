@@ -33,6 +33,8 @@ type fakeChat struct {
 	nextID int
 	// uploads holds uploaded files by name.
 	uploads map[string][]byte
+	// failSends makes message creation fail with 503.
+	failSends bool
 }
 
 const fakeMe = "users/me1"
@@ -179,6 +181,8 @@ func (f *fakeChat) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			out = append(out, f.withReactions(msg))
 		}
 		reply(chat.ListMessagesResponse{Messages: out})
+	case r.Method == http.MethodPost && len(seg) == 3 && seg[2] == "messages" && f.failSends:
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
 	case r.Method == http.MethodPost && len(seg) == 3 && seg[2] == "messages":
 		var in chat.Message
 		decode(&in)

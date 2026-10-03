@@ -220,11 +220,12 @@ func (m model) loadMessages(space, lastRead string, known map[string]string) tea
 	}
 }
 
-func (m model) sendCmd(space, thread, text string, quote *chat.Message) tea.Cmd {
+func (m model) sendCmd(space string, out outgoing, failed sendFailedMsg) tea.Cmd {
 	return func() tea.Msg {
-		msg, err := m.c.send(m.ctx, space, outgoing{thread: thread, text: text, quote: quote})
+		msg, err := m.c.send(m.ctx, space, out)
 		if err != nil {
-			return errMsg(err)
+			failed.err = err
+			return failed
 		}
 		return sentMsg(msg)
 	}
@@ -501,7 +502,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case errMsg:
 		slog.Error("shown error", "err", error(msg))
 		m.loadingOlder = false // a failed page would otherwise block older history
-		m.status = errStyle.Render(msg.Error())
+		m.status = errStyle.Render(describeErr(msg))
+		return m, nil
+
+	case sendFailedMsg:
+		m.unsent(msg)
 		return m, nil
 
 	case tea.KeyPressMsg:
@@ -682,6 +687,7 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	if m.cur < 0 {
 		return m, nil
 	}
+	failed := sendFailedMsg{key: m.draftKey(), text: text, mentions: maps.Clone(m.mentions), quote: m.quoting, editing: m.editing}
 	text = expandShortcodes(expandMentions(text, m.mentions), m.custom)
 	clear(m.mentions)
 	if e := m.editing; e != nil {
@@ -690,7 +696,8 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 		return m, func() tea.Msg {
 			msg, err := m.c.edit(m.ctx, e.Name, text)
 			if err != nil {
-				return errMsg(err)
+				failed.err = err
+				return failed
 			}
 			return sentMsg(msg)
 		}
@@ -704,9 +711,9 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	m.render()
 	if files := m.pending; len(files) > 0 {
 		m.pending = nil
-		return m, m.sendWith(m.spaces[m.cur].name, outgoing{thread: thread, text: text, quote: quote}, files)
+		return m, m.sendWith(m.spaces[m.cur].name, outgoing{thread: thread, text: text, quote: quote}, files, failed)
 	}
-	return m, m.sendCmd(m.spaces[m.cur].name, thread, text, quote)
+	return m, m.sendCmd(m.spaces[m.cur].name, outgoing{thread: thread, text: text, quote: quote}, failed)
 }
 
 func (m model) updateSwitcher(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {

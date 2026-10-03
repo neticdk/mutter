@@ -33,6 +33,7 @@ Everything is one `main` package, split into files by concern:
 | `image.go` | images and GIFs over the kitty graphics protocol |
 | `format.go` | Chat markup, cards, quotes, message bodies |
 | `logging.go` | slog setup, levels including trace, the log location |
+| `errors.go` | error messages for the status line, returning failed sends to the input |
 
 `scripts/` holds `setup.sh`, the one-time GCP setup for admins, and `install.sh`, the install fallback for machines without Homebrew.
 

@@ -270,3 +270,27 @@ func TestFlowHelp(t *testing.T) {
 	fl.key(tea.KeyEnter)
 	fl.sent("spaces/A", "??ok")
 }
+
+func TestFlowFailedSendKeepsText(t *testing.T) {
+	f := newFakeChat(t)
+	f.addSpace("spaces/A", "Platform")
+	f.post("spaces/A", "", "users/alice", "Deploy is blocked")
+
+	fl := startFlow(t, f)
+	fl.see("Deploy is blocked")
+
+	f.mu.Lock()
+	f.failSends = true
+	f.mu.Unlock()
+	fl.typeText("hello there")
+	fl.key(tea.KeyEnter)
+	fl.see("not sent, it's back in the input")
+	fl.see("> hello there")
+
+	// The returned text sends once the API recovers.
+	f.mu.Lock()
+	f.failSends = false
+	f.mu.Unlock()
+	fl.key(tea.KeyEnter)
+	fl.sent("spaces/A", "hello there")
+}

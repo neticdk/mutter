@@ -67,6 +67,10 @@ func (m *model) saveDraft() {
 		}
 		m.drafts[key] = d
 	}
+	m.writeDrafts()
+}
+
+func (m *model) writeDrafts() {
 	if err := writeCache("drafts.json", draftFile{User: m.c.me, Drafts: m.drafts}); err != nil {
 		slog.Warn("drafts write", "err", err)
 	}
