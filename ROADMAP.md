@@ -55,10 +55,8 @@ Measure with the API call counts in `mutter.log` at `MUTTER_LOG_LEVEL=debug` bef
 
 ## 5. UI tests
 
-Coverage is 17%, mostly pure functions. The Bubble Tea model has the most logic and the fewest tests.
-
-- [ ] `teatest` flows: select, open a thread, reply, react
-- [ ] Golden-file tests for messages, cards and quotes
+- [x] `teatest` flows against a fake Chat API, checked on an emulated screen: open a thread, reply, start a thread, react and unreact, edit, quote, delete, switch space
+- [x] Golden-file tests for markup, code blocks, quotes, forwards, cards, attachments and reactions (`just golden` rewrites them)
 
 ## 6. Rollout to colleagues
 

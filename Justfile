@@ -38,6 +38,10 @@ fmt-check:
 fix:
     go fix ./...
 
+# Rewrite the golden render files after an intended change. Review the diff.
+golden:
+    go test -run TestRenderGolden -update .
+
 # Run the benchmarks, such as rendering a 200-thread space.
 bench:
     go test -run '^$' -bench . -benchmem ./...

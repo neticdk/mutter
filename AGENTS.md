@@ -48,6 +48,8 @@ Run `just check` before committing.
 
 - Keep the code in the style around it, and keep comments to non-obvious rationale in the present tense.
 - Every non-trivial pure function gets a table test in the matching `_test.go`.
+- User flows get a `teatest` test in `flow_test.go`, against the fake Chat API in `fakechat_test.go`. Checks read the emulated screen, since Bubble Tea only redraws changed cells.
+- A rendering change updates the golden files with `just golden`, and the diff is part of the review.
 - Add a dependency only when the standard library or an existing dependency can't do the job.
 - A `#nosec` or `_ =` needs a comment saying why the input is trusted or the error is safe to drop.
 - Log with `slog`, key-value pairs and a constant lowercase message. Failures the user may notice are `warn`, diagnostics `debug`, raw dumps `trace`.
