@@ -17,7 +17,9 @@ Everything is one `main` package, split into files by concern:
 | `notify.go` | read state, unread markers, notification rules |
 | `ui.go` | the Bubble Tea model, key handling, rendering |
 | `actions.go` | actions on a selected message: react, edit, delete, files |
-| `compose.go` | @mention completion, `/attach` |
+| `compose.go` | completion for @mentions, `/dm` and emoji, `/attach` |
+| `emoji.go` | emoji shortcodes: search, completion and expansion |
+| `paste.go` | images from the clipboard or dropped files, sent with the next message |
 | `nav.go` | older history, live spaces, `/dm`, sections |
 | `presence.go` | the user's own availability: `/dnd`, `/away`, `/active`, `/status` |
 | `drafts.go` | unsent input per space and thread, kept in the cache directory |

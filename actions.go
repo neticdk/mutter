@@ -137,27 +137,18 @@ func (m *model) action(k string) (cmd tea.Cmd, ok bool) {
 	return nil, true
 }
 
-// updateMode handles the key after r (pick a reaction) or d (confirm).
+// updateMode handles the key after r (pick a reaction), l (pick a link) or
+// d (confirm).
 func (m model) updateMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if m.mode == modeReact {
+		return m.updateReact(msg)
+	}
 	mode, sel := m.mode, m.selected()
 	m.mode = ""
 	if sel == nil {
 		return m, nil
 	}
 	switch mode {
-	case modeReact:
-		var n int
-		if _, err := fmt.Sscanf(msg.String(), "%d", &n); err != nil || n < 1 || n > len(quickReactions) {
-			return m, nil
-		}
-		emoji, name := quickReactions[n-1], sel.Name
-		return m, func() tea.Msg {
-			updated, err := m.c.toggleReaction(m.ctx, name, emoji)
-			if err != nil {
-				return errMsg(err)
-			}
-			return messageEvent{kind: kindUpdated, name: name, msg: updated}
-		}
 	case modeLink:
 		var n int
 		if _, err := fmt.Sscanf(msg.String(), "%d", &n); err != nil || n < 1 || n > len(m.links) {
@@ -178,6 +169,56 @@ func (m model) updateMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// updateReact handles the reaction picker. Digits pick a quick reaction.
+// Typing searches all emoji by name, tab and shift+tab move through the
+// results, and enter picks one.
+func (m model) updateReact(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	k := msg.String()
+	var results []emojiEntry
+	if m.reactQuery != "" {
+		results = suggestEmoji(m.reactQuery)
+	}
+	switch {
+	case k == keyEsc:
+	case m.reactQuery == "" && len(k) == 1 && k >= "1" && k <= "9":
+		if n := int(k[0] - '0'); n <= len(quickReactions) {
+			return m.react(quickReactions[n-1])
+		}
+	case k == keyEnter && len(results) > 0:
+		return m.react(results[min(m.reactIdx, len(results)-1)].char)
+	case k == "backspace":
+		m.reactQuery = m.reactQuery[:max(0, len(m.reactQuery)-1)]
+		m.reactIdx = 0
+		return m, nil
+	case tabStep(k) != 0 && len(results) > 0:
+		m.reactIdx = (m.reactIdx + tabStep(k) + len(results)) % len(results)
+		return m, nil
+	case msg.Text != "" && strings.IndexFunc(msg.Text, func(r rune) bool { return !isCodeRune(r) }) < 0:
+		m.reactQuery += strings.ToLower(msg.Text)
+		m.reactIdx = 0
+		return m, nil
+	}
+	m.mode, m.reactQuery = "", ""
+	return m, nil
+}
+
+// react toggles emoji on the selected message and closes the picker.
+func (m model) react(emoji string) (tea.Model, tea.Cmd) {
+	m.mode, m.reactQuery = "", ""
+	sel := m.selected()
+	if sel == nil {
+		return m, nil
+	}
+	name := sel.Name
+	return m, func() tea.Msg {
+		updated, err := m.c.toggleReaction(m.ctx, name, emoji)
+		if err != nil {
+			return errMsg(err)
+		}
+		return messageEvent{kind: kindUpdated, name: name, msg: updated}
+	}
 }
 
 // fileCmd runs /open [n] or /save [n] on file n of the target thread, the
@@ -382,12 +423,26 @@ func reactions(msg *chat.Message) string {
 // modeHint is the status line for the current interaction, or "".
 func (m *model) modeHint() string {
 	switch {
+	case m.mode == modeReact && m.reactQuery != "":
+		results := suggestEmoji(m.reactQuery)
+		picks := make([]string, 0, len(results))
+		for i, e := range results {
+			p := e.char + " " + e.code
+			if i == m.reactIdx {
+				p = boldStyle.Render(p)
+			}
+			picks = append(picks, p)
+		}
+		if len(picks) == 0 {
+			picks = append(picks, dimStyle.Render("no match"))
+		}
+		return "react :" + m.reactQuery + " → " + strings.Join(picks, dimStyle.Render(" · ")) + dimStyle.Render(" · enter picks · tab next · esc cancels")
 	case m.mode == modeReact:
 		picks := make([]string, 0, len(quickReactions))
 		for i, e := range quickReactions {
 			picks = append(picks, fmt.Sprintf("%d %s", i+1, e))
 		}
-		return "react: " + strings.Join(picks, "  ") + dimStyle.Render(" · again removes it · any other key cancels")
+		return "react: " + strings.Join(picks, "  ") + dimStyle.Render(" · or type a name · again removes it · esc cancels")
 	case m.mode == modeLink:
 		picks := make([]string, 0, len(m.links))
 		for i, l := range m.links {

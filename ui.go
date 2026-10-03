@@ -23,6 +23,12 @@ import (
 
 const historySize = 200
 
+// Key names compared in several places.
+const (
+	keyEsc   = "esc"
+	keyEnter = "enter"
+)
+
 var (
 	headerStyle = lipgloss.NewStyle().Bold(true).Padding(0, 1)
 	senderStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("5"))
@@ -89,12 +95,14 @@ type model struct {
 
 	// Message actions. selecting means arrows picked a message, so letter
 	// keys act on it.
-	selecting bool
-	msgCursor int           // selected message in the thread view
-	mode      string        // modeReact, modeDelete or modeLink while waiting for the next key
-	links     []string      // what the link prompt offers
-	editing   *chat.Message // message whose text is in the input
-	quoting   *chat.Message // message the next send quotes
+	selecting  bool
+	msgCursor  int           // selected message in the thread view
+	mode       string        // modeReact, modeDelete or modeLink while waiting for the next key
+	links      []string      // what the link prompt offers
+	reactQuery string        // emoji search in the reaction picker
+	reactIdx   int           // highlighted search result
+	editing    *chat.Message // message whose text is in the input
+	quoting    *chat.Message // message the next send quotes
 
 	olderToken   string // page token for history before the oldest thread
 	openRead     string // the open space's read state before it opened
@@ -111,6 +119,7 @@ type model struct {
 	drafts   map[string]draft    // by draftKey
 	comp     *completion         // active tab cycle, see complete
 	presence *chat.Availability  // the user's own state, shown in the header
+	pending  []pending           // files to send with the next message
 	mentions map[string]string   // completed "@Name" in the draft to "<users/ID>"
 
 	vp viewport.Model
@@ -303,6 +312,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 
+	case pastedMsg:
+		m.pending = append(m.pending, pending(msg))
+		m.notice = "attached " + msg.name + ", it goes with the next message"
+		return m, nil
+
+	case tea.PasteMsg:
+		if f, ok := droppedFile(msg.Content); ok {
+			m.pending = append(m.pending, f)
+			m.notice = "attached " + f.name + ", it goes with the next message"
+			return m, nil
+		}
+
 	case presenceMsg:
 		m.presence = msg.a
 		return m, nil
@@ -470,7 +491,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.complete(tabStep(msg.String())) {
 				return m, nil
 			}
-		case "esc":
+		case "ctrl+v":
+			log.Print("paste: ctrl+v")
+			return m, pasteImage
+		case "ctrl+x":
+			if n := len(m.pending); n > 0 {
+				m.notice = "removed " + m.pending[n-1].name
+				m.pending = m.pending[:n-1]
+				return m, nil
+			}
+		case keyEsc:
 			switch {
 			case m.editing != nil || m.quoting != nil:
 				if m.editing != nil {
@@ -486,8 +516,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.render()
 			return m, nil
-		case "enter":
-			if t := m.target(); m.ta.Value() == "" && m.inThread == nil && t != nil {
+		case keyEnter:
+			// With files pending, enter sends them, even without text.
+			if t := m.target(); m.ta.Value() == "" && len(m.pending) == 0 && m.inThread == nil && t != nil {
 				m.saveDraft()
 				m.setThread(t)
 				m.loadDraft()
@@ -536,12 +567,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) submit() (tea.Model, tea.Cmd) {
 	text := strings.TrimSpace(m.ta.Value())
-	if text == "" {
+	if text == "" && len(m.pending) == 0 {
 		return m, nil
 	}
 	m.ta.Reset()
 	m.saveDraft() // sent, so the context's draft goes
-	fields := strings.Fields(text)
+	fields := append(strings.Fields(text), "")
 	switch fields[0] {
 	case "/open", "/save":
 		return m, m.fileCmd(fields)
@@ -570,7 +601,7 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	if m.cur < 0 {
 		return m, nil
 	}
-	text = expandMentions(text, m.mentions)
+	text = expandShortcodes(expandMentions(text, m.mentions))
 	clear(m.mentions)
 	if e := m.editing; e != nil {
 		m.editing = nil
@@ -590,12 +621,16 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	quote := m.quoting
 	m.quoting = nil
 	m.render()
+	if files := m.pending; len(files) > 0 {
+		m.pending = nil
+		return m, m.sendWith(m.spaces[m.cur].name, outgoing{thread: thread, text: text, quote: quote}, files)
+	}
 	return m, m.sendCmd(m.spaces[m.cur].name, thread, text, quote)
 }
 
 func (m model) updateSwitcher(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "esc", "ctrl+k":
+	case keyEsc, "ctrl+k":
 		m.switching = false
 		m.filter.Blur()
 		return m, m.ta.Focus()
@@ -605,7 +640,7 @@ func (m model) updateSwitcher(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "down", "ctrl+n":
 		m.pick = max(0, min(len(m.matches)-1, m.pick+1))
 		return m, nil
-	case "enter":
+	case keyEnter:
 		m.switching = false
 		m.filter.Blur()
 		if len(m.matches) == 0 {
@@ -715,7 +750,7 @@ func (m *model) attachCmd(cmd string) tea.Cmd {
 	if m.inThread != nil {
 		thread = m.inThread.name
 	}
-	text = expandMentions(text, m.mentions)
+	text = expandShortcodes(expandMentions(text, m.mentions))
 	clear(m.mentions)
 	m.notice = "uploading " + filepath.Base(path) + "…"
 	return func() tea.Msg {
@@ -1058,16 +1093,10 @@ func (m model) View() tea.View {
 		status = m.modeHint()
 	}
 	if status == "" {
-		if s, idx, dm := m.suggestions(); len(s) > 0 {
+		if s, idx := m.suggestions(); len(s) > 0 {
 			names := make([]string, 0, len(s))
 			for i, x := range s {
-				n := "@" + x.name
-				if dm {
-					n = x.name
-					if x.email != "" {
-						n += " " + dimStyle.Render(x.email)
-					}
-				}
+				n := x.label
 				if i == idx {
 					n = boldStyle.Render(n)
 				}
@@ -1088,6 +1117,7 @@ func (m model) View() tea.View {
 	if status == "" {
 		status = dimStyle.Render(hint)
 	}
+	status = m.pendingLabel() + status
 	v := tea.NewView(stripC1(lipgloss.JoinVertical(lipgloss.Left,
 		headerStyle.Render(title),
 		body,

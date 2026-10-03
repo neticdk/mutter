@@ -24,12 +24,12 @@ Built, but not yet seen working end to end.
 - [x] **Copy a message**: OSC 52, works over SSH
 - [x] **Open links in messages**: `l` on the selected message, picking with `1`–`9` when there are several
 - [x] **Code blocks**: fenced blocks get a left bar and start on their own line. Inline code stays cyan. No syntax highlighting.
-- [ ] **Emoji**: `:shortcode:` input and a full reaction picker
+- [x] **Emoji**: `:shortcode:` completion with tab, complete codes expanded on send, and a reaction picker that searches all emoji
 - [ ] **Configuration**: key bindings and a light theme from a config file
 - [x] **Cycling @mention suggestions**: tab moves through the suggestions shown, shift+tab back.
 - [x] **`/dm` by short name**: `/dm kn` tries `kn@` the user's own domain first, then a single known member whose address starts with `kn@`, and lists the candidates when several match. Tab completes names and addresses.
-- [ ] **Multiline paste**: pasted text with newlines lands in the input as one draft and never sends a line early. Bracketed paste arrives as one paste message, so check that the input handles it whole.
-- [ ] **Pasting images**: ctrl+v reads an image from the system clipboard, since terminal paste only carries text, and falls back to text paste when there's none. Read with `golang.design/x/clipboard` v0.11, which needs no cgo and reads in about 10 ms. The input shows `[image 1]`, and sending uploads it like `/attach`. A pasted path to an image file, as from drag and drop, attaches the same way.
+- [x] **Multiline paste**: bracketed paste lands in the input whole and never sends a line early. Covered by a test.
+- [x] **Pasting images**: ctrl+v reads an image from the system clipboard with `golang.design/x/clipboard`, falling back to text paste. A dropped image path attaches the file. Pending images show before the status line and go out with the next message.
 - [ ] **Optional sidebar**: unread and recently active spaces, display only. alt+1…9 or a click jumps, search stays in ctrl+k. ctrl+b toggles, hidden below ~100 columns, off by default
 
 ## 3. Performance

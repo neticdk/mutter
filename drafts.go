@@ -73,8 +73,10 @@ func (m *model) saveDraft() {
 }
 
 // loadDraft puts the current context's draft in the input, or empties it.
+// Pending files belong to the context left, so they go.
 func (m *model) loadDraft() {
 	m.ta.Reset()
+	m.pending = nil
 	clear(m.mentions)
 	if d, ok := m.drafts[m.draftKey()]; ok {
 		m.ta.SetValue(d.Text)

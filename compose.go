@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -95,40 +96,79 @@ func nameMatches(name, q string) bool {
 	return false
 }
 
+// suggestion is one completion candidate: what the status line shows and
+// what tab inserts. A mention also records how the send expands it.
+type suggestion struct {
+	label   string
+	insert  string
+	mention string // "@Name", empty unless a mention
+	token   string // "<users/ID>" for the mention
+}
+
 // completion is an active tab cycle through suggestions.
 type completion struct {
-	list  []member
+	list  []suggestion
 	idx   int
 	start int    // where the completed text begins in the input
-	dm    bool   // completing a /dm argument, not an @mention
 	text  string // the input right after the last completion
 }
 
+// Completion kinds.
+const (
+	completeMention = iota
+	completeDM
+	completeEmoji
+)
+
 // completionQuery finds what's being completed at the end of text: the
-// argument of /dm, or an @mention.
-func completionQuery(text string) (q string, start int, dm, ok bool) {
+// argument of /dm, an @mention or a :shortcode. When both a mention and a
+// shortcode are open, the later one wins.
+func completionQuery(text string) (q string, start, kind int, ok bool) {
 	if rest, found := strings.CutPrefix(text, "/dm "); found && rest != "" && !strings.ContainsRune(rest, '\n') {
-		return rest, len("/dm "), true, true
+		return rest, len("/dm "), completeDM, true
 	}
-	q, at, ok := mentionQuery(text)
-	return q, at, false, ok
+	mq, mat, mok := mentionQuery(text)
+	eq, eat, eok := emojiQuery(text)
+	switch {
+	case eok && (!mok || eat > mat):
+		return eq, eat, completeEmoji, true
+	case mok:
+		return mq, mat, completeMention, true
+	}
+	return "", 0, 0, false
 }
 
 // suggestions returns the completion candidates and the highlighted one:
 // the active cycle while the input is unchanged since the last tab,
 // otherwise fresh matches for what's being typed.
-func (m *model) suggestions() ([]member, int, bool) {
+func (m *model) suggestions() ([]suggestion, int) {
 	if c := m.comp; c != nil && m.ta.Value() == c.text {
-		return c.list, c.idx, c.dm
+		return c.list, c.idx
 	}
-	q, _, dm, ok := completionQuery(m.ta.Value())
+	q, _, kind, ok := completionQuery(m.ta.Value())
 	if !ok || m.cur < 0 {
-		return nil, 0, false
+		return nil, 0
 	}
-	if dm {
-		return suggestPeople(m.knownPeople(), q), 0, true
+	var out []suggestion
+	switch kind {
+	case completeDM:
+		for _, p := range suggestPeople(m.knownPeople(), q) {
+			label := p.name
+			if p.email != "" {
+				label += " " + dimStyle.Render(p.email)
+			}
+			out = append(out, suggestion{label: label, insert: cmp.Or(p.email, p.name)})
+		}
+	case completeMention:
+		for _, p := range suggest(m.members[m.spaces[m.cur].name], q) {
+			out = append(out, suggestion{label: "@" + p.name, insert: "@" + p.name + " ", mention: "@" + p.name, token: "<" + p.id + ">"})
+		}
+	case completeEmoji:
+		for _, e := range suggestEmoji(q) {
+			out = append(out, suggestion{label: e.char + " " + dimStyle.Render(e.code), insert: e.char + " "})
+		}
 	}
-	return suggest(m.members[m.spaces[m.cur].name], q), 0, false
+	return out, 0
 }
 
 // complete inserts a suggestion. The first tab inserts the top one, and
@@ -139,24 +179,22 @@ func (m *model) complete(step int) bool {
 	if c := m.comp; c != nil && m.ta.Value() == c.text {
 		c.idx = (c.idx + step + len(c.list)) % len(c.list)
 	} else {
-		list, _, dm := m.suggestions()
+		list, _ := m.suggestions()
 		if len(list) == 0 {
 			return false
 		}
 		_, start, _, _ := completionQuery(m.ta.Value())
-		m.comp = &completion{list: list, start: start, dm: dm}
+		m.comp = &completion{list: list, start: start}
 		if step < 0 {
 			m.comp.idx = len(list) - 1
 		}
 	}
 	c := m.comp
 	x := c.list[c.idx]
-	ins := cmp.Or(x.email, x.name)
-	if !c.dm {
-		ins = "@" + x.name + " "
-		m.mentions["@"+x.name] = "<" + x.id + ">"
+	if x.mention != "" {
+		m.mentions[x.mention] = x.token
 	}
-	c.text = m.ta.Value()[:c.start] + ins
+	c.text = m.ta.Value()[:c.start] + x.insert
 	m.ta.SetValue(c.text)
 	return true
 }
@@ -263,7 +301,12 @@ func (c *client) upload(ctx context.Context, space, path string) (*chat.Attachme
 		return nil, err
 	}
 	defer f.Close()
-	r, err := c.svc.Media.Upload(space, &chat.UploadAttachmentRequest{Filename: filepath.Base(path)}).Media(f).Context(ctx).Do()
+	return c.uploadData(ctx, space, filepath.Base(path), f)
+}
+
+// uploadData sends data named name to space.
+func (c *client) uploadData(ctx context.Context, space, name string, data io.Reader) (*chat.AttachmentDataRef, error) {
+	r, err := c.svc.Media.Upload(space, &chat.UploadAttachmentRequest{Filename: name}).Media(data).Context(ctx).Do()
 	if err != nil {
 		return nil, err
 	}

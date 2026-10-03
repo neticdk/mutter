@@ -9,12 +9,12 @@ Terminal client for Google Chat, for Workspace organizations.
 - Live updates through the Workspace Events API and Pub/Sub
 - Unread state synced with the web client, muted spaces respected
 - Desktop notifications following each space's notification setting
-- Reactions, edits, deletes, quotes and @mention completion
+- Reactions, edits, deletes, quotes, and completion for @mentions and `:emoji:`
 - Do Not Disturb, away and status from the input line
 - Drafts kept per space and thread, across restarts
 - Spaces and images cached locally and encrypted, so switching spaces and restarting are fast
 - Cards rendered as text, images and animated GIFs drawn in the terminal
-- File upload, download and open
+- File upload, download and open, and images pasted from the clipboard or dropped on the terminal
 
 ## Setup (once per organization)
 
@@ -179,19 +179,21 @@ To use a different OAuth client, for example during development, write it to `~/
 | Key | Action |
 |---|---|
 | enter | send, or open the selected thread when the input is empty |
-| shift+enter, alt+enter, ctrl+j | newline |
+| shift+enter, alt+enter, ctrl+j | newline. Pasted text keeps its newlines and never sends early. |
+| ctrl+v | paste an image from the clipboard to send with the next message, or text when there's no image. cmd+v belongs to the terminal, which pastes text and file paths but never images. |
+| ctrl+x | remove the last image waiting to be sent |
 | ctrl+k | switch space. The filter matches names and sidebar sections, and `✎` marks spaces with a draft. |
 | ↑ ↓ with an empty input | select a thread, or a message inside a thread |
 | ↑ on the oldest thread | load older history |
 | pgup, pgdown | scroll |
-| tab, shift+tab | complete an @mention or a `/dm` argument. Repeated presses cycle through the suggestions. |
+| tab, shift+tab | complete an @mention, a `/dm` argument or a `:shortcode`. Repeated presses cycle through the suggestions. |
 | esc | cancel editing or quoting, end selection, leave the thread |
 
 While a thread or message is selected, letter keys act on it. Any other key goes to the input.
 
 | Key | Action |
 |---|---|
-| `r` | react: `1`–`6` pick an emoji, picking it again removes it |
+| `r` | react: `1`–`6` pick a quick reaction, or type a name to search all emoji, tab to move, enter to pick. Picking one again removes it. |
 | `e` | edit your own message |
 | `d` | delete your own message, confirmed with `y` |
 | `q` | quote it in your next message |
@@ -200,6 +202,8 @@ While a thread or message is selected, letter keys act on it. Any other key goes
 | `u` | mark the space unread from this message onward |
 | `o` | open its files |
 | `s` | save its files to `~/Downloads` |
+
+Dropping an image file on the terminal pastes its path, and mutter attaches the file in place of the path.
 
 ### Commands
 
@@ -270,6 +274,8 @@ Planned improvements are in [ROADMAP.md](ROADMAP.md). The ones under Chat API ca
 
 - An @mention notifies only when completed with tab. A typed `@name` stays plain text.
 - Editing a message sends its mentions back as plain text.
+- Several pasted images go out as one message each, with the text on the first.
+- Pasted text has its tabs turned into spaces.
 - `/dm` matches names and completes only members of the spaces opened since startup. Short names at your own domain and full email addresses work for anyone.
 
 ### Images and files
