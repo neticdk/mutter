@@ -235,6 +235,9 @@ type loadFailedMsg struct {
 	err   error
 }
 
+// threadReadMsg is a thread's read time, changed on another device.
+type threadReadMsg struct{ thread, lastRead string }
+
 // cachedSpacesMsg is the cached space list, shown when listing failed.
 type cachedSpacesMsg struct {
 	spaces []space
@@ -348,6 +351,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if i := m.spaceIndex(msg.space); i >= 0 && i != m.cur {
 			m.spaces[i].unread = !m.spaces[i].muted && isUnread(m.spaces[i].lastActive, msg.lastRead)
 			m.spaces[i].lastRead = msg.lastRead
+		}
+		return m, nil
+
+	case threadReadMsg:
+		space := spaceOf(msg.thread)
+		threads := m.threads
+		if m.cur < 0 || m.spaces[m.cur].name != space {
+			threads = nil
+			if c := m.mem[space]; c != nil {
+				threads = c.threads
+			}
+		}
+		for _, t := range threads {
+			if t.name == msg.thread && m.c.threadRead(t, msg.lastRead) {
+				m.rc.clear() // the thread's markers changed
+				m.render()
+			}
 		}
 		return m, nil
 

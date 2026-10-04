@@ -7,7 +7,8 @@ Terminal client for Google Chat, for Workspace organizations.
 - Spaces, DMs and group chats, with a fuzzy switcher that lists unread spaces first and shows web-client sidebar sections
 - Threads collapsed to their root, with reply counts, opened in their own view
 - Live updates through the Workspace Events API and Pub/Sub
-- Unread state synced with the web client, muted spaces respected
+- Unread state for spaces and threads synced from the web client and phone, muted spaces respected
+- Your Do Not Disturb, away state and status follow changes made on other devices
 - Desktop notifications following each space's notification setting, with a bell that marks the terminal tab, and the unread count in the tab title
 - Reactions, edits, deletes, quotes, and completion for @mentions and `:emoji:`, including the organization's custom emoji
 - Do Not Disturb, away and status from the input line
@@ -286,7 +287,7 @@ Planned improvements are in [ROADMAP.md](ROADMAP.md). The ones under Chat API ca
 
 ### Chat API
 
-- Opening a thread clears its markers only in mutter. The API can read a thread's read state but not write it.
+- Opening a thread clears its markers only in mutter. The API can read a thread's read state but not write it. Reading a thread in the web client or on your phone does clear it in mutter.
 - `FOR_YOU` notifications fire on @mentions only. The API doesn't expose which threads you follow.
 - Card buttons that call Chat apps don't work, and interactive card widgets are skipped. Both need app authentication.
 - Other people's presence isn't shown. The API only returns the user's own availability.

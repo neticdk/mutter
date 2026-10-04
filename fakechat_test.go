@@ -302,6 +302,8 @@ func (f *fakeChat) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		msgName := strings.Join(seg[:4], "/")
 		f.reacts[msgName] = slices.DeleteFunc(f.reacts[msgName], func(x *chat.Reaction) bool { return x.Name == path })
 		reply(struct{}{})
+	case strings.HasSuffix(path, "/threadReadState"):
+		reply(chat.ThreadReadState{Name: path, LastReadTime: "2026-10-01T09:00:00Z"})
 	case strings.HasSuffix(path, "/spaceReadState"):
 		// Read up to the start, so everything posted in the test is new.
 		reply(chat.SpaceReadState{Name: path, LastReadTime: "2026-10-01T09:00:00Z"})

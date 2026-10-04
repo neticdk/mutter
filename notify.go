@@ -181,6 +181,25 @@ func (c *client) countNew(t *thread, spaceRead string) {
 	}
 }
 
+// threadRead moves t's read time to lastRead, read on another device, and
+// recounts its markers. An older read time changes nothing.
+func (c *client) threadRead(t *thread, lastRead string) bool {
+	if lastRead == "" || (t.readAt != "" && !isUnread(lastRead, t.readAt)) {
+		return false
+	}
+	t.readAt = lastRead
+	if !isUnread(t.msgs[0].CreateTime, lastRead) {
+		t.rootNew = false
+	}
+	t.unseen = 0
+	for _, m := range t.msgs[1:] {
+		if c.isNew(m, lastRead) {
+			t.unseen++
+		}
+	}
+	return true
+}
+
 // isNew reports whether someone else posted msg after readAt.
 func (c *client) isNew(msg *chat.Message, readAt string) bool {
 	own := msg.Sender != nil && msg.Sender.Name == c.meID

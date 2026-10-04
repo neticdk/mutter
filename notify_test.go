@@ -114,3 +114,43 @@ func TestMarkNewSkipsKnownThreads(t *testing.T) {
 		t.Errorf("readAt %s unseen %d, want the known read time and nothing new", th.readAt, th.unseen)
 	}
 }
+
+func TestThreadRead(t *testing.T) {
+	c := &client{meID: "users/me"}
+	msg := func(sender, at string) *chat.Message {
+		return &chat.Message{Sender: &chat.User{Name: sender}, CreateTime: at}
+	}
+	msgs := []*chat.Message{
+		msg("users/a", "2026-10-02T09:00:00Z"), // root
+		msg("users/b", "2026-10-02T10:30:00Z"),
+		msg("users/b", "2026-10-02T11:30:00Z"),
+	}
+	fresh := func() *thread {
+		return &thread{msgs: msgs, readAt: "2026-10-02T08:00:00Z", rootNew: true, unseen: 2}
+	}
+	for _, tc := range []struct {
+		name     string
+		lastRead string
+		changed  bool
+		rootNew  bool
+		unseen   int
+	}{
+		{"read everything elsewhere", "2026-10-02T12:00:00Z", true, false, 0},
+		{"read up to the first reply", "2026-10-02T11:00:00Z", true, false, 1},
+		{"older than what mutter knows", "2026-10-02T07:00:00Z", false, true, 2},
+		{"empty", "", false, true, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			th := fresh()
+			if got := c.threadRead(th, tc.lastRead); got != tc.changed {
+				t.Errorf("changed = %v, want %v", got, tc.changed)
+			}
+			if th.rootNew != tc.rootNew || th.unseen != tc.unseen {
+				t.Errorf("rootNew=%v unseen=%d, want %v and %d", th.rootNew, th.unseen, tc.rootNew, tc.unseen)
+			}
+		})
+	}
+	if got := readStateThread("users/1/spaces/AAA/threads/T1/threadReadState"); got != "spaces/AAA/threads/T1" {
+		t.Errorf("readStateThread = %s", got)
+	}
+}

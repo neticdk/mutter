@@ -423,3 +423,18 @@ func TestFlowManageSpaces(t *testing.T) {
 	fl.see("left Ops team")
 	fl.see("Deploy is blocked")
 }
+
+func TestFlowThreadReadElsewhere(t *testing.T) {
+	f := newFakeChat(t)
+	f.addSpace("spaces/A", "Platform")
+	root := f.post("spaces/A", "", "users/alice", "Deploy is blocked")
+	f.post("spaces/A", root.Thread.Name, "users/bob", "looking")
+	f.post("spaces/A", root.Thread.Name, "users/bob", "fixed")
+
+	fl := startFlow(t, f)
+	fl.see("2 new")
+
+	// Reading the thread on another device clears its marker.
+	fl.tm.Send(threadReadMsg{root.Thread.Name, "2026-10-01T13:00:00Z"})
+	fl.waitFor(func() bool { return !strings.Contains(fl.screen(), "2 new") }, "the marker to clear")
+}

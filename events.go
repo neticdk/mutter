@@ -37,8 +37,13 @@ var eventTypes = []string{
 	"google.workspace.chat.reaction.v1.deleted",
 }
 
-// userEventTypes keeps unread state in step with other devices.
-var userEventTypes = []string{"google.workspace.chat.spaceReadState.v1.updated"}
+// userEventTypes keeps unread state and the user's availability in step
+// with other devices.
+var userEventTypes = []string{
+	"google.workspace.chat.spaceReadState.v1.updated",
+	"google.workspace.chat.threadReadState.v1.updated",
+	"google.workspace.chat.availability.v1.updated",
+}
 
 const (
 	eventTarget = "//chat.googleapis.com/spaces/-"
@@ -287,15 +292,17 @@ func (e *events) ensurePubsubSub(ctx context.Context, wsName, suffix string) (st
 // eventData covers the payload shapes without resource data, single and
 // batched.
 type eventData struct {
-	Message        *named      `json:"message"`
-	Messages       []batchItem `json:"messages"`
-	Membership     *named      `json:"membership"`
-	Memberships    []batchItem `json:"memberships"`
-	Space          *named      `json:"space"`
-	Spaces         []batchItem `json:"spaces"`
-	SpaceReadState *named      `json:"spaceReadState"`
-	Reaction       *named      `json:"reaction"`
-	Reactions      []batchItem `json:"reactions"`
+	Message         *named      `json:"message"`
+	Messages        []batchItem `json:"messages"`
+	Membership      *named      `json:"membership"`
+	Memberships     []batchItem `json:"memberships"`
+	Space           *named      `json:"space"`
+	Spaces          []batchItem `json:"spaces"`
+	SpaceReadState  *named      `json:"spaceReadState"`
+	ThreadReadState *named      `json:"threadReadState"`
+	Availability    *named      `json:"availability"`
+	Reaction        *named      `json:"reaction"`
+	Reactions       []batchItem `json:"reactions"`
 }
 
 // batchItem is one entry of a batched event. Each batch fills only the
@@ -379,6 +386,21 @@ func (e *events) handle(ctx context.Context, m *pubsub.PubsubMessage) error {
 			return fmt.Errorf("read state %s: %w", space, err)
 		}
 		e.out <- readStateMsg{space, lastRead}
+	case strings.Contains(typ, ".threadReadState.v1."):
+		if d.ThreadReadState == nil {
+			return nil
+		}
+		rs, err := e.c.svc.Users.Spaces.Threads.GetThreadReadState(d.ThreadReadState.Name).Context(ctx).Do()
+		if err != nil {
+			return fmt.Errorf("thread read state %s: %w", d.ThreadReadState.Name, err)
+		}
+		e.out <- threadReadMsg{readStateThread(d.ThreadReadState.Name), rs.LastReadTime}
+	case strings.Contains(typ, ".availability.v1."):
+		a, err := e.c.svc.Users.Availability.Get(availabilityName).Context(ctx).Do()
+		if err != nil {
+			return fmt.Errorf("availability: %w", err)
+		}
+		e.out <- presenceMsg{a}
 	case strings.Contains(typ, ".membership.v1."), strings.Contains(typ, ".space.v1."):
 		var names []string
 		if d.Membership != nil {
@@ -423,6 +445,16 @@ func readStateSpace(name string) string {
 		return name
 	}
 	return parts[2] + "/" + parts[3]
+}
+
+// readStateThread turns users/U/spaces/S/threads/T/threadReadState into
+// spaces/S/threads/T.
+func readStateThread(name string) string {
+	parts := strings.Split(name, "/")
+	if len(parts) < 6 {
+		return name
+	}
+	return strings.Join(parts[2:6], "/")
 }
 
 func sameSet(a, b []string) bool {

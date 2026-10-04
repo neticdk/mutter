@@ -1,8 +1,13 @@
 package main
 
 import (
+	"context"
+	"encoding/base64"
 	"encoding/json"
 	"testing"
+
+	tea "charm.land/bubbletea/v2"
+	"google.golang.org/api/pubsub/v1"
 )
 
 func TestMessageKind(t *testing.T) {
@@ -26,5 +31,34 @@ func TestEventDataBatch(t *testing.T) {
 	}
 	if got := spaceOf("spaces/A/members/123"); got != "spaces/A" {
 		t.Errorf("spaceOf = %s", got)
+	}
+}
+
+func TestHandleUserEvents(t *testing.T) {
+	out := make(chan tea.Msg, 4)
+	e := &events{c: fakeClient(t, newFakeChat(t)), out: out}
+	event := func(typ, data string) *pubsub.PubsubMessage {
+		return &pubsub.PubsubMessage{
+			Attributes: map[string]string{"ce-type": typ, "ce-time": "2026-10-01T12:00:00Z"},
+			Data:       base64.StdEncoding.EncodeToString([]byte(data)),
+		}
+	}
+
+	err := e.handle(context.Background(), event("google.workspace.chat.threadReadState.v1.updated",
+		`{"threadReadState":{"name":"users/me1/spaces/A/threads/T1/threadReadState"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := <-out; got != (threadReadMsg{"spaces/A/threads/T1", "2026-10-01T09:00:00Z"}) {
+		t.Errorf("thread read event sent %#v", got)
+	}
+
+	err = e.handle(context.Background(), event("google.workspace.chat.availability.v1.updated",
+		`{"availability":{"name":"users/me1/availability"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := (<-out).(presenceMsg); !ok || got.a.State != "ACTIVE" {
+		t.Errorf("availability event sent %#v", got)
 	}
 }
