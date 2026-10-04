@@ -38,6 +38,7 @@ var (
 		{"o s", "open, save files"},
 	}
 	helpCommands = [][2]string{
+		{"/find QUERY", "search all spaces"},
 		{"/dm WHO", "open or start a DM"},
 		{"/attach PATH [text]", "upload a file"},
 		{"/gif QUERY", "search GIPHY, needs GIPHY_API_KEY"},

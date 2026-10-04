@@ -30,6 +30,8 @@ const (
 	keyEnter  = "enter"
 	keySwitch = "ctrl+k"
 	keyNext   = "ctrl+n"
+	keyUp     = "up"
+	keyDown   = "down"
 	cmdAway   = "/away"
 )
 
@@ -93,12 +95,15 @@ type model struct {
 	live    bool
 	liveErr error
 
-	focused  bool   // terminal has focus, so the open space counts as read
-	holdRead bool   // /unread was used, so don't mark the open space read
-	newBelow int    // threads that arrived below the cursor
-	notice   string // shown in place of the hints until the next key press
-	help     bool   // the help overlay covers the messages
-	viewing  string // image ref the viewer shows over the messages, or ""
+	focused  bool            // terminal has focus, so the open space counts as read
+	holdRead bool            // /unread was used, so don't mark the open space read
+	newBelow int             // threads that arrived below the cursor
+	notice   string          // shown in place of the hints until the next key press
+	help     bool            // the help overlay covers the messages
+	viewing  string          // image ref the viewer shows over the messages, or ""
+	found    []*chat.Message // /find results
+	foundIdx int
+	gotoMsg  string // message to select once its space has loaded
 	giphyKey string // from GIPHY_API_KEY, empty turns /gif off
 	gifs     []gifResult
 	gifIdx   int // selected GIF in the picker
@@ -341,6 +346,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 
+	case searchMsg:
+		m.showResults(msg)
+		return m, nil
+
 	case gifResultsMsg:
 		return m, m.showGIFs(msg)
 
@@ -416,6 +425,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			m.render()
+			m.finishGoto()
 			return m, tea.Batch(m.imgs.fetch(m.ctx, m.c, rootsOf(m.threads)), m.persist(msg.space, m.threads, m.olderToken))
 		}
 		return m, nil
@@ -610,14 +620,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.imgs.fetch(m.ctx, m.c, t.msgs)
 			}
 			return m.submit()
-		case "up", "down":
+		case keyUp, keyDown:
 			// Arrows move the thread cursor only while the input is empty, so
 			// they still navigate a multi-line draft.
 			if m.ta.Value() != "" {
 				break
 			}
 			step := 1
-			if msg.String() == "up" {
+			if msg.String() == keyUp {
 				step = -1
 			}
 			if t := m.inThread; t != nil {
@@ -667,6 +677,8 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 		return m, m.attachCmd(text)
 	case "/dm":
 		return m, m.dmCmd(strings.TrimPrefix(text, "/dm"))
+	case "/find":
+		return m, m.findCmd(strings.TrimPrefix(text, "/find"))
 	case "/gif":
 		return m, m.gifCmd(strings.TrimPrefix(text, "/gif"))
 	case "/unread":
@@ -729,10 +741,10 @@ func (m model) updateSwitcher(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.switching = false
 		m.filter.Blur()
 		return m, m.ta.Focus()
-	case "up", "ctrl+p":
+	case keyUp, "ctrl+p":
 		m.pick = max(0, m.pick-1)
 		return m, nil
-	case "down", "ctrl+n":
+	case keyDown, keyNext:
 		m.pick = max(0, min(len(m.matches)-1, m.pick+1))
 		return m, nil
 	case keyEnter:
@@ -1234,6 +1246,8 @@ func (m model) View() tea.View {
 		body = lipgloss.NewStyle().Width(m.width).Height(m.vp.Height()).Render(helpView(m.width, m.vp.Height()))
 	case m.mode == modeGIF:
 		body = m.gifView(m.vp.Height())
+	case m.mode == modeFind:
+		body = m.findView(m.vp.Height())
 	case m.switching:
 		body = m.switcherView()
 	case m.sidebarShown():

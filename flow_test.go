@@ -311,3 +311,31 @@ func TestFlowNextUnreadAndLinks(t *testing.T) {
 	fl.key('v')
 	fl.see("viewing images needs the kitty graphics protocol")
 }
+
+func TestFlowFind(t *testing.T) {
+	f := newFakeChat(t)
+	f.addSpace("spaces/A", "Platform")
+	f.addSpace("spaces/B", "Incidents")
+	root := f.post("spaces/A", "", "users/alice", "Deploy is blocked")
+	f.post("spaces/A", root.Thread.Name, "users/bob", "the canary failed")
+	f.post("spaces/B", "", "users/carol", "pager went off")
+
+	fl := startFlow(t, f)
+	fl.see("pager went off")
+
+	// A hit in another space opens that space and the thread, with the
+	// message selected.
+	fl.typeText("/find canary")
+	fl.key(tea.KeyEnter)
+	fl.see("1 match")
+	fl.see("Platform · bob")
+	fl.key(tea.KeyEnter)
+	fl.see("› thread")
+	fl.see("the canary failed")
+	fl.see("r react")
+
+	fl.key(tea.KeyEscape)
+	fl.typeText("/find nothing-like-this")
+	fl.key(tea.KeyEnter)
+	fl.see("no messages match nothing-like-this")
+}

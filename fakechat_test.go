@@ -160,6 +160,20 @@ func (f *fakeChat) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/upload/v1/") && strings.HasSuffix(path, "/attachments:upload"):
 		f.upload(w, r)
+	case r.Method == http.MethodPost && path == "spaces/-/messages:search":
+		// The real API parses a query language. Substring matching on the
+		// text covers keyword searches.
+		var in chat.SearchMessagesRequest
+		decode(&in)
+		var out []*chat.SearchMessageResult
+		for _, sp := range f.spaces {
+			for _, msg := range f.msgs[sp.Name] {
+				if strings.Contains(msg.Text, in.Filter) {
+					out = append(out, &chat.SearchMessageResult{Message: msg})
+				}
+			}
+		}
+		reply(chat.SearchMessagesResponse{Results: out})
 	case r.Method == http.MethodGet && path == "customEmojis":
 		reply(chat.ListCustomEmojisResponse{CustomEmojis: []*chat.CustomEmoji{fakeParrot}})
 	case r.Method == http.MethodGet && path == "spaces":

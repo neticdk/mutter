@@ -22,6 +22,7 @@ Everything is one `main` package, split into files by concern:
 | `sidebar.go` | the optional sidebar and saved preferences |
 | `help.go` | the help overlay with keys and commands |
 | `gif.go` | GIPHY search and the `/gif` picker |
+| `search.go` | `/find` and jumping to a result |
 | `paste.go` | images from the clipboard or dropped files, sent with the next message |
 | `nav.go` | older history, live spaces, `/dm`, sections |
 | `presence.go` | the user's own availability: `/dnd`, `/away`, `/active`, `/status` |

@@ -162,6 +162,8 @@ func (m model) updateMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.updateReact(msg)
 	case modeGIF:
 		return m.updateGIF(msg)
+	case modeFind:
+		return m.updateFind(msg)
 	}
 	mode, sel := m.mode, m.selected()
 	m.mode = ""
@@ -474,6 +476,8 @@ func (m *model) modeHint() string {
 			picks = append(picks, fmt.Sprintf("%d %s", i+1, e))
 		}
 		return "react: " + strings.Join(picks, "  ") + dimStyle.Render(" · or type a name · again removes it · esc cancels")
+	case m.mode == modeFind:
+		return "find: ↑ ↓ move · enter opens the thread · esc closes"
 	case m.mode == modeGIF:
 		return "gif: ← → or tab move · enter attaches it to your next message · esc cancels"
 	case m.mode == modeLink:
@@ -489,7 +493,7 @@ func (m *model) modeHint() string {
 	case m.quoting != nil:
 		return boldStyle.Render("quoting "+senderName(m.quoting)) + dimStyle.Render(" · enter send · esc cancel")
 	case m.selecting:
-		return dimStyle.Render("r react · e edit · d delete · q quote · y copy · c copy link · b browser · l links · v view image · u unread · o open · s save · esc done")
+		return dimStyle.Render("r react · e edit · d delete · q quote · y copy · c link · b browser · l links · v view · u unread · o open · s save · esc")
 	}
 	return ""
 }

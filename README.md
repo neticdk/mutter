@@ -14,6 +14,7 @@ Terminal client for Google Chat, for Workspace organizations.
 - Drafts kept per space and thread, across restarts
 - Spaces and images cached locally and encrypted, so switching spaces and restarting are fast
 - Cards rendered as text, images and animated GIFs drawn in the terminal, and Drive, Meet and Calendar links labeled
+- Search across all spaces with `/find`
 - File upload, download and open, and images pasted from the clipboard or dropped on the terminal
 - GIF search through GIPHY with `/gif`, when you set your own API key
 
@@ -219,6 +220,7 @@ Dropping an image file on the terminal pastes its path, and mutter attaches the 
 
 | Command | Action |
 |---|---|
+| `/find QUERY` | search messages in every space you're in, newest first. ↑ ↓ pick, enter opens the thread with the message selected. Plain words search text, and the [API's filters](https://developers.google.com/workspace/chat/api/reference/rest/v1/spaces.messages/search) work too, such as `has_link()`, `is_unread()` or `sender.name = "users/kn@example.com"`. |
 | `/dm WHO` | open or start a DM. `WHO` is an email address, a short name such as `kn` tried at your own domain first, or part of a name. |
 | `/attach PATH [text]` | upload a file into the open thread, or as a new thread. Quote paths with spaces. |
 | `/open [n]` | open file `n` of the selected or open thread, the last one by default |

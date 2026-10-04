@@ -28,6 +28,7 @@ Built, but not yet seen working end to end.
 - [x] **Custom emoji**: the organization's custom emoji in `:` completion and the `r` search, sent as `<customEmojis/ID>`, and shown as images in reactions and messages, animated when they're GIFs
 - [x] **GIF search**: `/gif QUERY` searches GIPHY with the user's own `GIPHY_API_KEY` and attaches the pick to the next message
 - [x] **Small conveniences**: ctrl+n opens the next unread space, the tab title shows the unread count, notifications ring the bell, `c` copies a message link, `b` and `/web` open the web client, `v` views an image full size
+- [x] **Search**: `/find` through `spaces.messages.search`, across all spaces, jumping to the thread
 - [x] **Rich links**: Drive files, Meet, Calendar, Gmail and Chat links labeled by kind. The API sends no titles.
 - [ ] **Configuration**: key bindings and a light theme from a config file
 - [x] **Cycling @mention suggestions**: tab moves through the suggestions shown, shift+tab back.
@@ -75,4 +76,3 @@ The Chat API doesn't support these.
 - Writing thread read state. The API can read it but not update it.
 - Followed threads
 - Card buttons that call Chat apps, which need app authentication
-- Message search, unverified. If the API has none for users, search can only cover cached history.
