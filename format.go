@@ -106,6 +106,62 @@ func formatInline(s string) string {
 	return s
 }
 
+// driveKinds names Drive MIME types for rich link chips.
+var driveKinds = map[string]string{
+	"application/vnd.google-apps.document":     "Google Doc",
+	"application/vnd.google-apps.spreadsheet":  "Google Sheet",
+	"application/vnd.google-apps.presentation": "Google Slides",
+	"application/vnd.google-apps.form":         "Google Form",
+	"application/vnd.google-apps.folder":       "Drive folder",
+	"application/pdf":                          "PDF",
+}
+
+// richLinkChip renders a rich link as one line naming what it points to,
+// or "" for plain links. The API sends no titles, only the kind and IDs.
+func richLinkChip(r *chat.RichLinkMetadata) string {
+	if r == nil {
+		return ""
+	}
+	var kind string
+	switch r.RichLinkType {
+	case "DRIVE_FILE":
+		kind = "Drive file"
+		if d := r.DriveLinkData; d != nil {
+			kind = cmp.Or(driveKinds[d.MimeType], kind)
+		}
+	case "CHAT_SPACE":
+		kind = "Chat space"
+		if d := r.ChatSpaceLinkData; d != nil {
+			switch {
+			case d.Message != "":
+				kind = "Chat message"
+			case d.Thread != "":
+				kind = "Chat thread"
+			}
+		}
+	case "MEET_SPACE":
+		kind = "Meet"
+		if d := r.MeetSpaceLinkData; d != nil {
+			if d.Type == "HUDDLE" {
+				kind = "Meet huddle"
+				if st := strings.ToLower(d.HuddleStatus); st != "" && st != "huddle_status_unspecified" {
+					kind += " " + st
+				}
+			}
+			if d.MeetingCode != "" {
+				kind += " " + clean(d.MeetingCode)
+			}
+		}
+	case "CALENDAR_EVENT":
+		kind = "Calendar event"
+	case "GMAIL_MESSAGE":
+		kind = "Gmail message"
+	default:
+		return ""
+	}
+	return dimStyle.Render("◆ " + kind + " · " + clean(shortURL(r.Uri)))
+}
+
 // customEmojiNames returns m's text with each custom emoji, which the API
 // sends as one placeholder character, spelled out as :name:. Annotation
 // indexes count UTF-16 code units.
@@ -159,6 +215,11 @@ func messageBody(m *chat.Message, img func(ref string) string, num *int) string 
 	}
 	if m.Text != "" {
 		parts = append(parts, customEmojiText(m, formatText(customEmojiNames(m)), img))
+	}
+	for _, a := range m.Annotations {
+		if c := richLinkChip(a.RichLinkMetadata); c != "" {
+			parts = append(parts, c)
+		}
 	}
 	for _, c := range m.CardsV2 {
 		if c.Card != nil {

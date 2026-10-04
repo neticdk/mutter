@@ -13,7 +13,7 @@ Terminal client for Google Chat, for Workspace organizations.
 - Do Not Disturb, away and status from the input line
 - Drafts kept per space and thread, across restarts
 - Spaces and images cached locally and encrypted, so switching spaces and restarting are fast
-- Cards rendered as text, images and animated GIFs drawn in the terminal
+- Cards rendered as text, images and animated GIFs drawn in the terminal, and Drive, Meet and Calendar links labeled
 - File upload, download and open, and images pasted from the clipboard or dropped on the terminal
 - GIF search through GIPHY with `/gif`, when you set your own API key
 

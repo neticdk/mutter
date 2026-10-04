@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"google.golang.org/api/chat/v1"
@@ -85,6 +86,35 @@ func TestCustomEmojiNames(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := customEmojiNames(&chat.Message{Text: tc.text, Annotations: tc.ann}); got != tc.want {
 				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRichLinkChip(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		r    *chat.RichLinkMetadata
+		want string // "" means no chip
+	}{
+		{"none", nil, ""},
+		{"doc", &chat.RichLinkMetadata{RichLinkType: "DRIVE_FILE", Uri: "https://docs.google.com/document/d/1", DriveLinkData: &chat.DriveLinkData{MimeType: "application/vnd.google-apps.document"}}, "◆ Google Doc"},
+		{"other drive file", &chat.RichLinkMetadata{RichLinkType: "DRIVE_FILE", Uri: "https://drive.google.com/file/d/1", DriveLinkData: &chat.DriveLinkData{MimeType: "image/png"}}, "◆ Drive file"},
+		{"chat thread", &chat.RichLinkMetadata{RichLinkType: "CHAT_SPACE", Uri: "https://chat.google.com/room/A/T", ChatSpaceLinkData: &chat.ChatSpaceLinkData{Space: "spaces/A", Thread: "spaces/A/threads/T"}}, "◆ Chat thread"},
+		{"huddle", &chat.RichLinkMetadata{RichLinkType: "MEET_SPACE", Uri: "https://meet.google.com/abc", MeetSpaceLinkData: &chat.MeetSpaceLinkData{Type: "HUDDLE", HuddleStatus: "STARTED", MeetingCode: "abc-defg-hij"}}, "◆ Meet huddle started abc-defg-hij"},
+		{"unknown type", &chat.RichLinkMetadata{RichLinkType: "SOMETHING_NEW", Uri: "https://x"}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := richLinkChip(tc.r)
+			got := visible(raw)
+			if tc.want == "" {
+				if raw != "" {
+					t.Errorf("chip = %q, want none", got)
+				}
+				return
+			}
+			if !strings.Contains(got, tc.want) {
+				t.Errorf("chip = %q, want it to contain %q", got, tc.want)
 			}
 		})
 	}

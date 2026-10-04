@@ -64,6 +64,13 @@ func TestRenderGolden(t *testing.T) {
 				{Emoji: &chat.Emoji{CustomEmoji: &chat.CustomEmoji{EmojiName: "parrot"}}, ReactionCount: 1},
 			},
 		},
+		"richlinks": {
+			Text: "notes in https://docs.google.com/document/d/1 and join https://meet.google.com/abc-defg-hij",
+			Annotations: []*chat.Annotation{
+				{Type: "RICH_LINK", RichLinkMetadata: &chat.RichLinkMetadata{RichLinkType: "DRIVE_FILE", Uri: "https://docs.google.com/document/d/1", DriveLinkData: &chat.DriveLinkData{MimeType: "application/vnd.google-apps.document"}}},
+				{Type: "RICH_LINK", RichLinkMetadata: &chat.RichLinkMetadata{RichLinkType: "MEET_SPACE", Uri: "https://meet.google.com/abc-defg-hij", MeetSpaceLinkData: &chat.MeetSpaceLinkData{Type: "MEETING", MeetingCode: "abc-defg-hij"}}},
+			},
+		},
 	}
 	for name, msg := range tests {
 		t.Run(name, func(t *testing.T) {

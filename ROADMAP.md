@@ -28,6 +28,7 @@ Built, but not yet seen working end to end.
 - [x] **Custom emoji**: the organization's custom emoji in `:` completion and the `r` search, sent as `<customEmojis/ID>`, and shown as images in reactions and messages, animated when they're GIFs
 - [x] **GIF search**: `/gif QUERY` searches GIPHY with the user's own `GIPHY_API_KEY` and attaches the pick to the next message
 - [x] **Small conveniences**: ctrl+n opens the next unread space, the tab title shows the unread count, notifications ring the bell, `c` copies a message link, `b` and `/web` open the web client, `v` views an image full size
+- [x] **Rich links**: Drive files, Meet, Calendar, Gmail and Chat links labeled by kind. The API sends no titles.
 - [ ] **Configuration**: key bindings and a light theme from a config file
 - [x] **Cycling @mention suggestions**: tab moves through the suggestions shown, shift+tab back.
 - [x] **`/dm` by short name**: `/dm kn` tries `kn@` the user's own domain first, then a single known member whose address starts with `kn@`, and lists the candidates when several match. Tab completes names and addresses.
