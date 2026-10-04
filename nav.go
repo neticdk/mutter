@@ -258,3 +258,20 @@ func (m model) fetchMessage(ref messageRef) tea.Cmd {
 		return messageEvent{kind: ref.kind, name: ref.name, msg: msg}
 	}
 }
+
+// nextUnread opens the first unread space in the switcher's order, other
+// than the open one.
+func (m *model) nextUnread() tea.Cmd {
+	var idx []int
+	for i, s := range m.spaces {
+		if s.unread && !s.hidden && i != m.cur {
+			idx = append(idx, i)
+		}
+	}
+	if len(idx) == 0 {
+		m.notice = "no unread spaces"
+		return nil
+	}
+	sortSpaces(m.spaces, idx)
+	return m.open(idx[0])
+}

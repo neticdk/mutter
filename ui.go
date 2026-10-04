@@ -29,6 +29,7 @@ const (
 	keyEsc    = "esc"
 	keyEnter  = "enter"
 	keySwitch = "ctrl+k"
+	keyNext   = "ctrl+n"
 	cmdAway   = "/away"
 )
 
@@ -97,6 +98,7 @@ type model struct {
 	newBelow int    // threads that arrived below the cursor
 	notice   string // shown in place of the hints until the next key press
 	help     bool   // the help overlay covers the messages
+	viewing  string // image ref the viewer shows over the messages, or ""
 	giphyKey string // from GIPHY_API_KEY, empty turns /gif off
 	gifs     []gifResult
 	gifIdx   int // selected GIF in the picker
@@ -325,7 +327,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !msg.show {
 			return m, nil
 		}
-		return m, tea.Raw(osc777(msg.title, msg.body))
+		// The bell marks the terminal tab, which stays visible after the
+		// desktop notification is gone.
+		return m, tea.Raw(osc777(msg.title, msg.body) + "\a")
 
 	case tea.FocusMsg:
 		m.focused = true
@@ -526,6 +530,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if n := sidebarKey(msg.String()); n > 0 && m.sidebarShown() {
 			return m, m.jump(n)
 		}
+		if m.viewing != "" {
+			m.viewing = ""
+			m.render() // the viewer's image leaves the screen
+			return m, nil
+		}
 		if m.help {
 			// Typing closes the overlay and goes on to the input.
 			m.help = false
@@ -551,6 +560,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		switch msg.String() {
+		case keyNext:
+			return m, m.nextUnread()
 		case keySwitch:
 			m.switching = true
 			m.filter.SetValue("")
@@ -665,6 +676,9 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch text {
+	case "/web":
+		m.webCmd()
+		return m, nil
 	case "/help":
 		m.help = true
 		return m, nil
@@ -1143,6 +1157,26 @@ func (m *model) message(msg *chat.Message, num *int) string {
 	return text
 }
 
+// windowTitle names the terminal tab: unread spaces first, so they show in
+// a narrow tab, then the open space.
+func windowTitle(unread int, space string) string {
+	t := "mutter"
+	if unread > 0 {
+		t += fmt.Sprintf(" (%d)", unread)
+	}
+	if space != "" {
+		t += " · " + clean(space)
+	}
+	return t
+}
+
+func (m *model) currentTitle() string {
+	if m.cur < 0 {
+		return ""
+	}
+	return m.spaces[m.cur].title
+}
+
 func plural(n int, one, many string) string {
 	if n == 1 {
 		return one
@@ -1194,6 +1228,8 @@ func (m model) View() tea.View {
 	}
 	body := m.vp.View()
 	switch {
+	case m.viewing != "":
+		body = m.viewerView()
 	case m.help:
 		body = lipgloss.NewStyle().Width(m.width).Height(m.vp.Height()).Render(helpView(m.width, m.vp.Height()))
 	case m.mode == modeGIF:
@@ -1243,6 +1279,7 @@ func (m model) View() tea.View {
 	)))
 	v.AltScreen = true
 	v.ReportFocus = true
+	v.WindowTitle = windowTitle(unread, m.currentTitle())
 	if m.sidebarShown() {
 		// Clicks reach the sidebar. Most terminals still select text with
 		// shift held.

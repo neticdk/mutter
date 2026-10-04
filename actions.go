@@ -5,12 +5,14 @@ import (
 	"context"
 	"fmt"
 	"html"
+	"net/http"
 	"net/url"
 	"regexp"
 	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"google.golang.org/api/chat/v1"
 )
 
@@ -128,6 +130,13 @@ func (m *model) action(k string) (cmd tea.Cmd, ok bool) {
 		default:
 			m.mode, m.links = modeLink, links
 		}
+	case "b":
+		m.openLink(m.msgURL(sel))
+	case "c":
+		m.notice = "copied the link"
+		return tea.SetClipboard(m.msgURL(sel)), true
+	case "v":
+		return m.viewImage(sel), true
 	case "o", "s":
 		files := filesOf(sel)
 		if len(files) == 0 {
@@ -480,7 +489,7 @@ func (m *model) modeHint() string {
 	case m.quoting != nil:
 		return boldStyle.Render("quoting "+senderName(m.quoting)) + dimStyle.Render(" · enter send · esc cancel")
 	case m.selecting:
-		return dimStyle.Render("r react · e edit · d delete · q quote · y copy · l links · u unread from here · o open files · s save files · esc done")
+		return dimStyle.Render("r react · e edit · d delete · q quote · y copy · c copy link · b browser · l links · v view image · u unread · o open · s save · esc done")
 	}
 	return ""
 }
@@ -490,4 +499,94 @@ func senderName(msg *chat.Message) string {
 		return ""
 	}
 	return clean(cmp.Or(msg.Sender.DisplayName, msg.Sender.Name))
+}
+
+// webURL links to a space, thread or message in the web client. Message
+// IDs are "thread.message", which the web client's links split into path
+// segments.
+func webURL(sp space, thread, msg string) string {
+	kind := "room"
+	if sp.dm {
+		kind = "dm"
+	}
+	u := "https://chat.google.com/" + kind + "/" + strings.TrimPrefix(sp.name, "spaces/")
+	if id := lastSegment(msg); id != "" {
+		if t, m, ok := strings.Cut(id, "."); ok {
+			return u + "/" + t + "/" + m
+		}
+		return u + "/" + cmp.Or(lastSegment(thread), id) + "/" + id
+	}
+	if t := lastSegment(thread); t != "" {
+		return u + "/" + t
+	}
+	return u
+}
+
+// lastSegment is the ID at the end of a resource name.
+func lastSegment(name string) string {
+	return name[strings.LastIndexByte(name, '/')+1:]
+}
+
+// msgURL is webURL for msg in the open space.
+func (m *model) msgURL(msg *chat.Message) string {
+	thread := ""
+	if msg.Thread != nil {
+		thread = msg.Thread.Name
+	}
+	return webURL(m.spaces[m.cur], thread, msg.Name)
+}
+
+// webCmd runs /web: the open thread, or the space, in the browser.
+func (m *model) webCmd() {
+	if m.cur < 0 {
+		return
+	}
+	thread := ""
+	if m.inThread != nil {
+		thread = m.inThread.name
+	}
+	m.openLink(webURL(m.spaces[m.cur], thread, ""))
+}
+
+// viewImage shows msg's first image or GIF at the size of the message pane.
+// ponytail: only the first image, add paging when messages with several
+// images come up.
+func (m *model) viewImage(msg *chat.Message) tea.Cmd {
+	if !m.imgs.enabled {
+		m.notice = "viewing images needs the kitty graphics protocol, as in Ghostty"
+		return nil
+	}
+	lay := layout{
+		cellW:   m.imgs.layout.cellW,
+		cellH:   m.imgs.layout.cellH,
+		maxCols: max(1, m.vp.Width()-2),
+		maxRows: min(len(diacritics), max(1, m.vp.Height()-1)),
+	}
+	ctx := m.ctx
+	for _, a := range msg.Attachment {
+		if ref := imageRef(a); ref != "" {
+			m.viewing = viewRef(ref)
+			return m.imgs.fetchWith(m.viewing, lay, func() (*http.Response, error) {
+				return m.c.svc.Media.Download(ref).Context(ctx).Download()
+			})
+		}
+	}
+	for _, g := range msg.AttachedGifs {
+		if firstHTTPS(g.Uri) != "" {
+			m.viewing = viewRef(g.Uri)
+			return m.imgs.fetchURL(ctx, m.viewing, g.Uri, lay)
+		}
+	}
+	m.notice = "no image in this message"
+	return nil
+}
+
+// viewerView is the image viewer's pane: the image centered, or a note
+// while it loads.
+func (m *model) viewerView() string {
+	s := m.imgs.render(m.viewing)
+	if s == "" {
+		s = dimStyle.Render("loading the image…")
+	}
+	return lipgloss.Place(m.vp.Width(), m.vp.Height(), lipgloss.Center, lipgloss.Center, s)
 }

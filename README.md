@@ -8,7 +8,7 @@ Terminal client for Google Chat, for Workspace organizations.
 - Threads collapsed to their root, with reply counts, opened in their own view
 - Live updates through the Workspace Events API and Pub/Sub
 - Unread state synced with the web client, muted spaces respected
-- Desktop notifications following each space's notification setting
+- Desktop notifications following each space's notification setting, with a bell that marks the terminal tab, and the unread count in the tab title
 - Reactions, edits, deletes, quotes, and completion for @mentions and `:emoji:`, including the organization's custom emoji
 - Do Not Disturb, away and status from the input line
 - Drafts kept per space and thread, across restarts
@@ -185,6 +185,7 @@ To use a different OAuth client, for example during development, write it to `~/
 | ctrl+x | remove the last image waiting to be sent |
 | ctrl+b | show or hide the sidebar of unread and recent spaces. It hides itself in windows narrower than 100 columns. |
 | alt+1…9, ctrl+1…9 | open a sidebar entry. alt needs option-as-alt on macOS, ctrl works without it. |
+| ctrl+n | open the next unread space, in the switcher's order |
 | ctrl+k | switch space. The filter matches names and sidebar sections, and `✎` marks spaces with a draft. |
 | ↑ ↓ with an empty input | select a thread, or a message inside a thread |
 | ↑ on the oldest thread | load older history |
@@ -203,6 +204,9 @@ While a thread or message is selected, letter keys act on it. Any other key goes
 | `q` | quote it in your next message |
 | `y` | copy its text to the clipboard, over OSC 52 |
 | `l` | open a link in it. With several, pick one with `1`–`9`. |
+| `c` | copy a link to it in the web client |
+| `b` | open it in the web client, for what mutter can't do, such as calls, polls and card buttons |
+| `v` | view its first image or GIF at the size of the message pane. Any key closes it. |
 | `u` | mark the space unread from this message onward |
 | `o` | open its files |
 | `s` | save its files to `~/Downloads` |
@@ -225,6 +229,7 @@ Dropping an image file on the terminal pastes its path, and mutter attaches the 
 | `/active [DURATION]` | show as active, back to activity-based after `DURATION` |
 | `/status [EMOJI] [TEXT]` | set your status, with 💬 when no emoji is given. Without text, it's cleared. |
 | `/gif QUERY` | search GIPHY and pick a GIF with ← → or tab. Enter attaches it to your next message. Needs `GIPHY_API_KEY`, see [GIFs](#gifs). |
+| `/web` | open the space, or the open thread, in the web client |
 | `/help` | show keys and commands |
 | `/logout` | delete the stored token and the local cache, and quit |
 | `/quit` | quit |

@@ -289,3 +289,25 @@ func TestFlowFailedSendKeepsText(t *testing.T) {
 	fl.key(tea.KeyEnter)
 	fl.sent("spaces/A", "hello there")
 }
+
+func TestFlowNextUnreadAndLinks(t *testing.T) {
+	f := newFakeChat(t)
+	f.addSpace("spaces/A", "Platform")
+	f.addSpace("spaces/B", "Incidents")
+	f.post("spaces/A", "", "users/alice", "in platform")
+	f.post("spaces/B", "", "users/bob", "in incidents")
+
+	fl := startFlow(t, f)
+	fl.see("in incidents") // the most recently active space opens first
+
+	fl.tm.Send(tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
+	fl.see("in platform")
+	fl.tm.Send(tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
+	fl.see("no unread spaces")
+
+	fl.key(tea.KeyUp)
+	fl.key('c')
+	fl.see("copied the link")
+	fl.key('v')
+	fl.see("viewing images needs the kitty graphics protocol")
+}

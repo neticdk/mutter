@@ -65,3 +65,44 @@ func TestLinksOfStripsControls(t *testing.T) {
 		t.Errorf("linksOf kept control characters: %q", got)
 	}
 }
+
+func TestWebURL(t *testing.T) {
+	room := space{name: "spaces/AAA"}
+	dm := space{name: "spaces/DDD", dm: true}
+	for _, tc := range []struct {
+		name        string
+		sp          space
+		thread, msg string
+		want        string
+	}{
+		{"space", room, "", "", "https://chat.google.com/room/AAA"},
+		{"dm", dm, "", "", "https://chat.google.com/dm/DDD"},
+		{"thread", room, "spaces/AAA/threads/T1", "", "https://chat.google.com/room/AAA/T1"},
+		{"message with thread key", room, "spaces/AAA/threads/T1", "spaces/AAA/messages/T1.M2", "https://chat.google.com/room/AAA/T1/M2"},
+		{"message without thread key", room, "spaces/AAA/threads/T1", "spaces/AAA/messages/M2", "https://chat.google.com/room/AAA/T1/M2"},
+		{"dm message", dm, "", "spaces/DDD/messages/T9.T9", "https://chat.google.com/dm/DDD/T9/T9"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := webURL(tc.sp, tc.thread, tc.msg); got != tc.want {
+				t.Errorf("webURL = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestWindowTitle(t *testing.T) {
+	for _, tc := range []struct {
+		unread int
+		space  string
+		want   string
+	}{
+		{0, "", "mutter"},
+		{0, "Platform", "mutter · Platform"},
+		{3, "Platform", "mutter (3) · Platform"},
+		{1, "evil\x1b]0;x\a", "mutter (1) · evil]0;x"},
+	} {
+		if got := windowTitle(tc.unread, tc.space); got != tc.want {
+			t.Errorf("windowTitle(%d, %q) = %q, want %q", tc.unread, tc.space, got, tc.want)
+		}
+	}
+}

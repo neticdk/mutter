@@ -114,12 +114,9 @@ func (im *images) fetch(ctx context.Context, c *client, msgs []*chat.Message) te
 	}
 	var cmds []tea.Cmd
 	get := func(ref string, lay layout, do func() (*http.Response, error)) {
-		if ref == "" || im.byRef[ref] != nil {
-			return
+		if ref != "" {
+			cmds = append(cmds, im.fetchWith(ref, lay, do))
 		}
-		im.byRef[ref] = &img{}
-		st := im.store
-		cmds = append(cmds, func() tea.Msg { return cachedDownload(st, ref, do, lay) })
 	}
 	for _, m := range msgs {
 		for _, a := range m.Attachment {
@@ -153,13 +150,26 @@ func (im *images) fetchEmoji(ctx context.Context, e *chat.CustomEmoji) tea.Cmd {
 
 // fetchURL loads the image at a public URL as ref, sized for lay.
 func (im *images) fetchURL(ctx context.Context, ref, url string, lay layout) tea.Cmd {
-	if !im.enabled || url == "" || im.byRef[ref] != nil {
+	if url == "" {
+		return nil
+	}
+	return im.fetchWith(ref, lay, httpGet(ctx, url)) //nolint:bodyclose // download closes it
+}
+
+// fetchWith loads ref with do, sized for lay, unless it's loaded or
+// loading.
+func (im *images) fetchWith(ref string, lay layout, do func() (*http.Response, error)) tea.Cmd {
+	if !im.enabled || im.byRef[ref] != nil {
 		return nil
 	}
 	im.byRef[ref] = &img{}
 	st := im.store
-	return func() tea.Msg { return cachedDownload(st, ref, httpGet(ctx, url), lay) } //nolint:bodyclose // download closes it
+	return func() tea.Msg { return cachedDownload(st, ref, do, lay) }
 }
+
+// viewRef names the full-pane copy of image ref, which the viewer loads
+// at its own size.
+func viewRef(ref string) string { return "view|" + ref }
 
 func emojiRef(uid string) string { return "emoji/" + uid }
 
