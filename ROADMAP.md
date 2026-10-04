@@ -32,7 +32,6 @@ Built, but not yet seen working end to end.
 - [x] **Offline start**: cached identity, space list and snapshots when Google can't be reached, reloaded once live updates connect
 - [x] **Rich links**: Drive files, Meet, Calendar, Gmail and Chat links labeled by kind. The API sends no titles.
 - [x] **Space management**: `/new`, `/rename`, `/invite` and `/leave`
-- [ ] **Configuration**: key bindings and a light theme from a config file
 - [x] **Cycling @mention suggestions**: tab moves through the suggestions shown, shift+tab back.
 - [x] **`/dm` by short name**: `/dm kn` tries `kn@` the user's own domain first, then a single known member whose address starts with `kn@`, and lists the candidates when several match. Tab completes names and addresses.
 - [x] **Multiline paste**: bracketed paste lands in the input whole and never sends a line early. Covered by a test.
@@ -68,13 +67,6 @@ Measure with the API call counts in `mutter.log` at `MUTTER_LOG_LEVEL=debug` bef
 ## 6. Rollout to colleagues
 
 - [ ] Per-user Pub/Sub topics, see [Isolating users](README.md#isolating-users). Blocks rollout beyond one team.
-- [ ] Token storage fallback for Linux without a Secret Service
 - [x] Help overlay with keys and commands, on `/help` or F1
 
-## Out of scope
-
-The Chat API doesn't support these.
-
-- Writing thread read state. The API can read it but not update it.
-- Followed threads
-- Card buttons that call Chat apps, which need app authentication
+Ideas that aren't planned, and what the Chat API blocks, are in [IDEAS.md](IDEAS.md).

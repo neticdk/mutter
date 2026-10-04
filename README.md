@@ -348,7 +348,7 @@ Needs Go, [just](https://github.com/casey/just) and golangci-lint. gosec and gov
 
 `just` alone lists every recipe.
 
-Planned work is in [ROADMAP.md](ROADMAP.md).
+Planned work is in [ROADMAP.md](ROADMAP.md), and ideas that aren't planned are in [IDEAS.md](IDEAS.md).
 
 ## Logging
 
