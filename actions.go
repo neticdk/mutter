@@ -21,6 +21,7 @@ const (
 	modeReact  = "react"
 	modeDelete = "delete"
 	modeLink   = "link"
+	modeLeave  = "leave"
 )
 
 // maxLinks is how many links the link prompt offers, one per digit key.
@@ -164,6 +165,12 @@ func (m model) updateMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.updateGIF(msg)
 	case modeFind:
 		return m.updateFind(msg)
+	case modeLeave:
+		m.mode = ""
+		if msg.String() != "y" {
+			return m, nil
+		}
+		return m, m.leave()
 	}
 	mode, sel := m.mode, m.selected()
 	m.mode = ""
@@ -476,6 +483,8 @@ func (m *model) modeHint() string {
 			picks = append(picks, fmt.Sprintf("%d %s", i+1, e))
 		}
 		return "react: " + strings.Join(picks, "  ") + dimStyle.Render(" · or type a name · again removes it · esc cancels")
+	case m.mode == modeLeave:
+		return boldStyle.Render("leave "+clean(m.spaces[m.cur].title)+"?") + dimStyle.Render(" y to confirm, any other key cancels")
 	case m.mode == modeFind:
 		return "find: ↑ ↓ move · enter opens the thread · esc closes"
 	case m.mode == modeGIF:

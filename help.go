@@ -40,6 +40,10 @@ var (
 	helpCommands = [][2]string{
 		{"/find QUERY", "search all spaces"},
 		{"/dm WHO", "open or start a DM"},
+		{"/new NAME", "create a space"},
+		{"/rename NAME", "rename the space"},
+		{"/invite WHO", "add someone to the space"},
+		{"/leave", "leave the space"},
 		{"/attach PATH [text]", "upload a file"},
 		{"/gif QUERY", "search GIPHY, needs GIPHY_API_KEY"},
 		{"/open [n]", "open a file"},

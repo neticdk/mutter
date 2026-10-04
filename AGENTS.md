@@ -24,7 +24,7 @@ Everything is one `main` package, split into files by concern:
 | `gif.go` | GIPHY search and the `/gif` picker |
 | `search.go` | `/find` and jumping to a result |
 | `paste.go` | images from the clipboard or dropped files, sent with the next message |
-| `nav.go` | older history, live spaces, `/dm`, sections |
+| `nav.go` | older history, live spaces, `/dm`, sections, `/new`, `/rename`, `/invite`, `/leave` |
 | `presence.go` | the user's own availability: `/dnd`, `/away`, `/active`, `/status` |
 | `drafts.go` | unsent input per space and thread, kept in the cache directory |
 | `rendercache.go` | rendered messages and styled blocks kept between renders |

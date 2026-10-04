@@ -37,6 +37,8 @@ type fakeChat struct {
 	failSends bool
 	// down makes every request fail with 503.
 	down bool
+	// invited holds members added through the API, by space.
+	invited map[string][]string
 }
 
 const fakeMe = "users/me1"
@@ -53,7 +55,7 @@ func emojiKey(e *chat.Emoji) string {
 }
 
 func newFakeChat(t testing.TB) *fakeChat {
-	return &fakeChat{t: t, uploads: map[string][]byte{}, msgs: map[string][]*chat.Message{}, reacts: map[string][]*chat.Reaction{}, clock: time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)}
+	return &fakeChat{t: t, uploads: map[string][]byte{}, invited: map[string][]string{}, msgs: map[string][]*chat.Message{}, reacts: map[string][]*chat.Reaction{}, clock: time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)}
 }
 
 // tick returns a timestamp later than every earlier one.
@@ -178,6 +180,38 @@ func (f *fakeChat) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		reply(chat.SearchMessagesResponse{Results: out})
+	case r.Method == http.MethodPost && path == "spaces":
+		var in chat.Space
+		decode(&in)
+		f.nextID++
+		in.Name, in.LastActiveTime = fmt.Sprintf("spaces/S%d", f.nextID), f.tick()
+		f.spaces = append(f.spaces, &in)
+		reply(in)
+	case r.Method == http.MethodPatch && len(seg) == 2 && seg[0] == "spaces":
+		var in chat.Space
+		decode(&in)
+		for _, sp := range f.spaces {
+			if sp.Name == path {
+				sp.DisplayName = in.DisplayName
+				reply(sp)
+				return
+			}
+		}
+		http.NotFound(w, r)
+	case r.Method == http.MethodPost && len(seg) == 3 && seg[2] == "members":
+		var in chat.Membership
+		decode(&in)
+		space := seg[0] + "/" + seg[1]
+		f.invited[space] = append(f.invited[space], in.Member.Name)
+		reply(in)
+	case r.Method == http.MethodDelete && len(seg) == 4 && seg[2] == "members":
+		space := seg[0] + "/" + seg[1]
+		if "users/"+seg[3] != fakeMe {
+			http.Error(w, "only yourself", http.StatusForbidden)
+			return
+		}
+		f.spaces = slices.DeleteFunc(f.spaces, func(sp *chat.Space) bool { return sp.Name == space })
+		reply(struct{}{})
 	case r.Method == http.MethodGet && path == "customEmojis":
 		reply(chat.ListCustomEmojisResponse{CustomEmojis: []*chat.CustomEmoji{fakeParrot}})
 	case r.Method == http.MethodGet && path == "spaces":

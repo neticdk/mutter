@@ -392,6 +392,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 
+	case leftMsg:
+		m.notice = "left " + msg.title
+		if i := m.spaceIndex(msg.name); i >= 0 {
+			m.spaces[i].hidden = true
+			delete(m.mem, msg.name)
+		}
+		var visible []int
+		for i, s := range m.spaces {
+			if !s.hidden {
+				visible = append(visible, i)
+			}
+		}
+		if len(visible) == 0 {
+			return m, nil
+		}
+		sortSpaces(m.spaces, visible)
+		return m, m.open(visible[0])
+
 	case searchMsg:
 		m.showResults(msg)
 		return m, nil
@@ -742,6 +760,12 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 		return m, m.attachCmd(text)
 	case "/dm":
 		return m, m.dmCmd(strings.TrimPrefix(text, "/dm"))
+	case "/new":
+		return m, m.newSpaceCmd(strings.TrimPrefix(text, "/new"))
+	case "/rename":
+		return m, m.renameCmd(strings.TrimPrefix(text, "/rename"))
+	case "/invite":
+		return m, m.inviteCmd(strings.TrimPrefix(text, "/invite"))
 	case "/find":
 		return m, m.findCmd(strings.TrimPrefix(text, "/find"))
 	case "/gif":
@@ -755,6 +779,11 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 	switch text {
 	case "/web":
 		m.webCmd()
+		return m, nil
+	case "/leave":
+		if m.cur >= 0 {
+			m.mode = modeLeave
+		}
 		return m, nil
 	case "/help":
 		m.help = true

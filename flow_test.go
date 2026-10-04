@@ -384,3 +384,42 @@ func TestFlowOfflineStart(t *testing.T) {
 	offline.tm.Send(liveMsg{})
 	offline.see("fixed it")
 }
+
+func TestFlowManageSpaces(t *testing.T) {
+	f := newFakeChat(t)
+	f.addSpace("spaces/A", "Platform")
+	f.post("spaces/A", "", "users/alice", "Deploy is blocked")
+
+	fl := startFlow(t, f)
+	fl.see("Deploy is blocked")
+
+	fl.typeText("/new Ops")
+	fl.key(tea.KeyEnter)
+	fl.see("Ops ")
+	fl.typeText("/rename Ops team")
+	fl.key(tea.KeyEnter)
+	fl.see("Ops team")
+
+	fl.typeText("/invite kim@example.com")
+	fl.key(tea.KeyEnter)
+	fl.see("invited kim@example.com")
+	f.mu.Lock()
+	var space string
+	for s, users := range f.invited {
+		if slices.Contains(users, "users/kim@example.com") {
+			space = s
+		}
+	}
+	f.mu.Unlock()
+	if space == "" || space == "spaces/A" {
+		t.Fatalf("invite went to %q, want the new space", space)
+	}
+
+	// Leaving asks first, then opens the next space.
+	fl.typeText("/leave")
+	fl.key(tea.KeyEnter)
+	fl.see("leave Ops team?")
+	fl.key('y')
+	fl.see("left Ops team")
+	fl.see("Deploy is blocked")
+}

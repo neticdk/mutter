@@ -223,6 +223,10 @@ Dropping an image file on the terminal pastes its path, and mutter attaches the 
 |---|---|
 | `/find QUERY` | search messages in every space you're in, newest first. ↑ ↓ pick, enter opens the thread with the message selected. Plain words search text, and the [API's filters](https://developers.google.com/workspace/chat/api/reference/rest/v1/spaces.messages/search) work too, such as `has_link()`, `is_unread()` or `sender.name = "users/kn@example.com"`. |
 | `/dm WHO` | open or start a DM. `WHO` is an email address, a short name such as `kn` tried at your own domain first, or part of a name. |
+| `/new NAME` | create a space with only you in it, and open it |
+| `/rename NAME` | rename the open space |
+| `/invite WHO` | add someone to the open space. `WHO` works as in `/dm`. |
+| `/leave` | leave the open space, confirmed with `y` |
 | `/attach PATH [text]` | upload a file into the open thread, or as a new thread. Quote paths with spaces. |
 | `/open [n]` | open file `n` of the selected or open thread, the last one by default |
 | `/save [n]` | save file `n` to `~/Downloads` |
@@ -265,10 +269,10 @@ The first run asks the user to grant these OAuth scopes. mutter asks again whene
 | Scope | Used for |
 |---|---|
 | `openid`, `email` | identifying the user |
-| `chat.spaces.readonly` | listing spaces |
+| `chat.spaces` | listing and renaming spaces |
 | `chat.spaces.create` | starting DMs with `/dm` |
 | `chat.messages` | reading, sending, editing and deleting messages, reactions, attachments |
-| `chat.memberships.readonly` | DM titles and @mention completion |
+| `chat.memberships` | DM titles, @mention completion, `/invite` and `/leave` |
 | `chat.users.readstate` | unread state |
 | `chat.users.spacesettings` | notification and mute settings |
 | `chat.users.sections.readonly` | sidebar sections |

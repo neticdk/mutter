@@ -2,6 +2,7 @@ package main
 
 import (
 	"cmp"
+	"fmt"
 	"log/slog"
 	"slices"
 	"strings"
@@ -146,10 +147,17 @@ func (m *model) dmCmd(who string) tea.Cmd {
 		m.notice = "usage: /dm NAME or /dm EMAIL"
 		return nil
 	}
+	tries, fail := m.resolvePerson(who)
+	return m.openDM(tries, fail)
+}
+
+// resolvePerson turns who, an email address, a short name or part of a
+// name, into user names to try in order, and the notice for when none
+// works.
+func (m *model) resolvePerson(who string) (tries []string, fail string) {
 	if strings.Contains(who, "@") {
-		return m.openDM([]string{"users/" + who}, "")
+		return []string{"users/" + who}, ""
 	}
-	var tries []string
 	if _, domain, ok := strings.Cut(m.c.me, "@"); ok && !strings.ContainsAny(who, " \t") {
 		tries = append(tries, "users/"+who+"@"+domain)
 	}
@@ -157,7 +165,7 @@ func (m *model) dmCmd(who string) tea.Cmd {
 	if match != "" {
 		tries = append(tries, match)
 	}
-	fail := "no one called " + who + " in the spaces opened so far, use their email"
+	fail = "no one called " + who + " in the spaces opened so far, use their email"
 	if len(candidates) > 1 {
 		names := make([]string, 0, len(candidates))
 		for _, x := range candidates {
@@ -165,8 +173,107 @@ func (m *model) dmCmd(who string) tea.Cmd {
 		}
 		fail = "which one: " + strings.Join(names, ", ")
 	}
-	return m.openDM(tries, fail)
+	return tries, fail
 }
+
+// newSpaceCmd runs /new NAME: a named space with only the user in it.
+func (m *model) newSpaceCmd(name string) tea.Cmd {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		m.notice = "usage: /new NAME"
+		return nil
+	}
+	m.notice = "creating " + name + "…"
+	ctx, c := m.ctx, m.c
+	return func() tea.Msg {
+		sp, err := c.svc.Spaces.Create(&chat.Space{DisplayName: name, SpaceType: "SPACE"}).Context(ctx).Do()
+		if err != nil {
+			return errMsg(fmt.Errorf("create space: %w", err))
+		}
+		return spaceInfoMsg{space: space{name: sp.Name, title: sp.DisplayName, lastActive: sp.LastActiveTime}, name: sp.Name, open: true}
+	}
+}
+
+// renameCmd runs /rename NAME on the open space.
+func (m *model) renameCmd(name string) tea.Cmd {
+	name = strings.TrimSpace(name)
+	switch {
+	case name == "":
+		m.notice = "usage: /rename NAME"
+		return nil
+	case m.cur < 0:
+		return nil
+	case m.spaces[m.cur].dm:
+		m.notice = "DMs have no name to change"
+		return nil
+	}
+	sp := m.spaces[m.cur]
+	ctx, c := m.ctx, m.c
+	return func() tea.Msg {
+		r, err := c.svc.Spaces.Patch(sp.name, &chat.Space{DisplayName: name}).UpdateMask("displayName").Context(ctx).Do()
+		if err != nil {
+			return errMsg(fmt.Errorf("rename: %w", err))
+		}
+		sp.title = r.DisplayName
+		return spaceInfoMsg{space: sp, name: sp.name}
+	}
+}
+
+// inviteCmd runs /invite WHO on the open space, resolving WHO as /dm does.
+func (m *model) inviteCmd(who string) tea.Cmd {
+	who = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(who), "@"))
+	switch {
+	case who == "":
+		m.notice = "usage: /invite NAME or /invite EMAIL"
+		return nil
+	case m.cur < 0:
+		return nil
+	case m.spaces[m.cur].dm:
+		m.notice = "a DM can't take more people, start a group chat in the web client"
+		return nil
+	}
+	tries, fail := m.resolvePerson(who)
+	if len(tries) == 0 {
+		m.notice = fail
+		return nil
+	}
+	space := m.spaces[m.cur].name
+	ctx, c := m.ctx, m.c
+	m.notice = "inviting " + who + "…"
+	return func() tea.Msg {
+		var lastErr error
+		for _, user := range tries {
+			_, err := c.svc.Spaces.Members.Create(space, &chat.Membership{Member: &chat.User{Name: user, Type: "HUMAN"}}).Context(ctx).Do()
+			if err == nil {
+				return noticeMsg("invited " + who)
+			}
+			slog.Debug("invite attempt", "user", user, "err", err)
+			lastErr = err
+		}
+		if fail != "" {
+			return noticeMsg(fail)
+		}
+		return errMsg(fmt.Errorf("invite: %w", lastErr))
+	}
+}
+
+// leave removes the user from the open space and hides it.
+func (m *model) leave() tea.Cmd {
+	if m.cur < 0 {
+		return nil
+	}
+	sp := m.spaces[m.cur]
+	member := sp.name + "/members/" + strings.TrimPrefix(m.c.meID, "users/")
+	ctx, c := m.ctx, m.c
+	return func() tea.Msg {
+		if _, err := c.svc.Spaces.Members.Delete(member).Context(ctx).Do(); err != nil {
+			return errMsg(fmt.Errorf("leave: %w", err))
+		}
+		return leftMsg{sp.name, sp.title}
+	}
+}
+
+type leftMsg struct{ name, title string }
 
 // dmMatch picks the person who refers to from people: the only one whose
 // address starts with who@, or else the only one whose name matches. With

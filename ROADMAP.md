@@ -31,6 +31,7 @@ Built, but not yet seen working end to end.
 - [x] **Search**: `/find` through `spaces.messages.search`, across all spaces, jumping to the thread
 - [x] **Offline start**: cached identity, space list and snapshots when Google can't be reached, reloaded once live updates connect
 - [x] **Rich links**: Drive files, Meet, Calendar, Gmail and Chat links labeled by kind. The API sends no titles.
+- [x] **Space management**: `/new`, `/rename`, `/invite` and `/leave`
 - [ ] **Configuration**: key bindings and a light theme from a config file
 - [x] **Cycling @mention suggestions**: tab moves through the suggestions shown, shift+tab back.
 - [x] **`/dm` by short name**: `/dm kn` tries `kn@` the user's own domain first, then a single known member whose address starts with `kn@`, and lists the candidates when several match. Tab completes names and addresses.

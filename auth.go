@@ -27,9 +27,9 @@ const keyringService = "mutter"
 var scopes = []string{
 	"openid",
 	"email",
-	chat.ChatSpacesReadonlyScope,
+	chat.ChatSpacesScope,
 	chat.ChatMessagesScope,
-	chat.ChatMembershipsReadonlyScope,
+	chat.ChatMembershipsScope,
 	chat.ChatUsersReadstateScope,
 	chat.ChatUsersSpacesettingsScope,
 	chat.ChatUsersSectionsReadonlyScope,
