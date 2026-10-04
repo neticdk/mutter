@@ -65,7 +65,17 @@ Measure with the API call counts in `mutter.log` at `MUTTER_LOG_LEVEL=debug` bef
 - [x] `teatest` flows against a fake Chat API, checked on an emulated screen: open a thread, reply, start a thread, react and unreact, edit, quote, delete, switch space
 - [x] Golden-file tests for markup, code blocks, quotes, forwards, cards, attachments and reactions (`just golden` rewrites them)
 
-## 6. Rollout to colleagues
+## 6. Finding what needs you
+
+- [ ] **Mentions inbox**: `/mentions` lists unread messages that mention you across all spaces and jumps to them, through search with `annotations.user_mentions.user.name:users/me is_unread()`
+- [ ] **Next unread thread**: one key moves to the next thread with new replies, in the open space and then the next
+- [ ] **Triage mode**: step through every unread thread in every space, one at a time, with reply, react, mark read, skip and open
+- [ ] **Mute and unmute**: `/mute` and `/unmute` through `spaceNotificationSetting.patch`
+- [ ] **Mark read**: `/read` for the open space and `/read all` for every space, through `updateSpaceReadState`
+- [ ] **@all**: completion offers `@all`, sent as `<users/all>`, unverified
+- [ ] **Compose in `$EDITOR`**: ctrl+e opens the draft in the editor and puts the result back in the input
+
+## 7. Rollout to colleagues
 
 - [ ] Per-user Pub/Sub topics, see [Isolating users](README.md#isolating-users). Blocks rollout beyond one team.
 - [x] Help overlay with keys and commands, on `/help` or F1

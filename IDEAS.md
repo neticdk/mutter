@@ -9,6 +9,11 @@ Things considered but not planned. [ROADMAP.md](ROADMAP.md) holds what is planne
     - Whether tmux reports pixel sizes through `TIOCGWINSZ`. If not, query the outer terminal with `CSI 16 t`.
 - **Configuration**: key bindings and a light theme from a config file
 - **Token storage fallback** for Linux without a Secret Service
+- **Code blocks**: a key that copies a message's code block alone, syntax highlighting through chroma, colored ```` ```diff ```` blocks
+- **Link unfurling with local tools**: titles, state and CI status for GitHub links through `gh`, and Jira or Grafana the same way, fetched with the user's own credentials
+- **Unified timeline**: one chronological stream across all spaces, or a chosen set such as incident spaces
+- **Split view**: two spaces side by side
+- **Summaries**: `/summary` sends a thread or the unread backlog to an LLM for a catch-up. Opt-in only, since it sends internal chat to an outside API.
 
 ## Dropped
 
