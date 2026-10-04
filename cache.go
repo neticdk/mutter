@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"slices"
 
@@ -93,7 +94,7 @@ func (m *model) useMemory() bool { return m.live }
 
 // stash keeps the open space for switching back, and stores it on disk.
 func (m *model) stash() tea.Cmd {
-	if m.cur < 0 || m.loading || m.threads == nil {
+	if m.cur < 0 || m.loading || m.loadFailed || m.threads == nil {
 		return nil
 	}
 	name := m.spaces[m.cur].name
@@ -191,3 +192,46 @@ func rootsOf(threads []*thread) []*chat.Message {
 // liveLost drops the memory cache when live updates break, since events
 // missed in the gap would leave it stale.
 func (m *model) liveLost() { clear(m.mem) }
+
+// storedSpace is a space in the cached space list.
+type storedSpace struct {
+	Name       string `json:"name"`
+	Title      string `json:"title"`
+	LastActive string `json:"lastActive"`
+	DM         bool   `json:"dm"`
+}
+
+// saveSpaces keeps the space list, so a start without network still shows
+// the spaces.
+func (m *model) saveSpaces(spaces []space) tea.Cmd {
+	st := m.store
+	if st == nil {
+		return nil
+	}
+	out := make([]storedSpace, 0, len(spaces))
+	for _, s := range spaces {
+		out = append(out, storedSpace{s.name, s.title, s.lastActive, s.dm})
+	}
+	return func() tea.Msg {
+		if err := st.put("meta", "spaces", out); err != nil {
+			slog.Warn("space list cache write", "err", err)
+		}
+		return nil
+	}
+}
+
+// cachedSpaces reads the space list saveSpaces kept.
+func cachedSpaces(st *store) ([]space, error) {
+	if st == nil {
+		return nil, errors.New("no cache")
+	}
+	var in []storedSpace
+	if err := st.get("meta", "spaces", &in); err != nil {
+		return nil, err
+	}
+	out := make([]space, 0, len(in))
+	for _, s := range in {
+		out = append(out, space{name: s.Name, title: s.Title, lastActive: s.LastActive, dm: s.DM})
+	}
+	return out, nil
+}

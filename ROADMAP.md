@@ -19,7 +19,7 @@ Built, but not yet seen working end to end.
 ## 2. Daily driver
 
 - [x] **Presence and Do Not Disturb**: your own state in the header, set with `/dnd`, `/away`, `/active` and `/status`. The API doesn't return other people's.
-- [x] **Local message cache**: spaces in memory for the session, encrypted snapshots and images on disk across restarts. Not yet readable offline.
+- [x] **Local message cache**: spaces in memory for the session, encrypted snapshots and images on disk across restarts. Readable offline, see Offline start.
 - [x] **Drafts**: unsent text kept per space and thread, across switches and restarts
 - [x] **Copy a message**: OSC 52, works over SSH
 - [x] **Open links in messages**: `l` on the selected message, picking with `1`–`9` when there are several
@@ -29,6 +29,7 @@ Built, but not yet seen working end to end.
 - [x] **GIF search**: `/gif QUERY` searches GIPHY with the user's own `GIPHY_API_KEY` and attaches the pick to the next message
 - [x] **Small conveniences**: ctrl+n opens the next unread space, the tab title shows the unread count, notifications ring the bell, `c` copies a message link, `b` and `/web` open the web client, `v` views an image full size
 - [x] **Search**: `/find` through `spaces.messages.search`, across all spaces, jumping to the thread
+- [x] **Offline start**: cached identity, space list and snapshots when Google can't be reached, reloaded once live updates connect
 - [x] **Rich links**: Drive files, Meet, Calendar, Gmail and Chat links labeled by kind. The API sends no titles.
 - [ ] **Configuration**: key bindings and a light theme from a config file
 - [x] **Cycling @mention suggestions**: tab moves through the suggestions shown, shift+tab back.

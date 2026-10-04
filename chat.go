@@ -57,12 +57,28 @@ func newClient(ctx context.Context, hc *http.Client) (*client, error) {
 	if err != nil {
 		return nil, err
 	}
+	var id identity
 	info, err := ui.Userinfo.Get().Context(ctx).Do()
-	if err != nil {
+	switch {
+	case err == nil:
+		id = identity{Email: info.Email, ID: info.Id}
+		if err := writeCache("identity.json", id); err != nil {
+			slog.Warn("identity cache write", "err", err)
+		}
+	case offline(err) && readCache("identity.json", &id) == nil && id.ID != "":
+		// Offline at start: the cached identity lets cached spaces show.
+		slog.Warn("offline at start, using the cached identity", "err", err)
+	default:
 		return nil, err
 	}
-	slog.Info("logged in", "email", info.Email, "user", "users/"+info.Id)
-	return &client{svc: svc, me: info.Email, meID: "users/" + info.Id, settings: map[string]*chat.SpaceNotificationSetting{}}, nil
+	slog.Info("logged in", "email", id.Email, "user", "users/"+id.ID)
+	return &client{svc: svc, me: id.Email, meID: "users/" + id.ID, settings: map[string]*chat.SpaceNotificationSetting{}}, nil
+}
+
+// identity is the logged-in user, kept for starting offline.
+type identity struct {
+	Email string `json:"email"`
+	ID    string `json:"id"`
 }
 
 // spaces lists the user's spaces, most recently active first.

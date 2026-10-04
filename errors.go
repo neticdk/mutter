@@ -33,12 +33,24 @@ func describeErr(err error) string {
 		}
 		return fmt.Sprintf("Google refused it (%d): %s", ge.Code, clean(cmp.Or(ge.Message, http.StatusText(ge.Code))))
 	}
-	_, isURL := errors.AsType[*url.Error](err)
-	_, isNet := errors.AsType[net.Error](err)
-	if isURL || isNet || errors.Is(err, context.DeadlineExceeded) {
+	if offline(err) {
 		return "can't reach Google, check the network"
 	}
 	return err.Error()
+}
+
+// offline reports whether err means Google couldn't be reached, as opposed
+// to Google answering with an error.
+func offline(err error) bool {
+	if _, ok := errors.AsType[*oauth2.RetrieveError](err); ok {
+		return false
+	}
+	if _, ok := errors.AsType[*googleapi.Error](err); ok {
+		return false
+	}
+	_, isURL := errors.AsType[*url.Error](err)
+	_, isNet := errors.AsType[net.Error](err)
+	return isURL || isNet || errors.Is(err, context.DeadlineExceeded)
 }
 
 // sendFailedMsg carries a message that didn't go out, so it isn't lost.

@@ -29,9 +29,17 @@ func startFlow(t *testing.T, f *fakeChat) *flow {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	return startFlowWith(t, f, nil)
+}
+
+// startFlowWith runs mutter with st as its disk cache, so a second flow can
+// start from what a first one cached.
+func startFlowWith(t *testing.T, f *fakeChat, st *store) *flow {
+	t.Helper()
 	t.Setenv("TERM_PROGRAM", "") // no images
 	const w, h = 120, 40
 	m := newModel(context.Background(), fakeClient(t, f), make(chan tea.Msg))
+	m.store, m.imgs.store = st, st
 	tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(w, h))
 	emu := vt.NewSafeEmulator(w, h)
 	// The output isn't a TTY, so newlines come without the carriage return
@@ -338,4 +346,41 @@ func TestFlowFind(t *testing.T) {
 	fl.typeText("/find nothing-like-this")
 	fl.key(tea.KeyEnter)
 	fl.see("no messages match nothing-like-this")
+}
+
+func TestFlowOfflineStart(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	st, err := newStore(t.TempDir(), make([]byte, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := newFakeChat(t)
+	f.addSpace("spaces/A", "Platform")
+	f.post("spaces/A", "", "users/alice", "Deploy is blocked")
+
+	// The first run caches the space list and the space.
+	online := startFlowWith(t, f, st)
+	online.see("Deploy is blocked")
+	online.waitFor(func() bool {
+		var snap snapshot
+		var spaces []storedSpace
+		return st.get("msgs", "spaces/A", &snap) == nil && st.get("meta", "spaces", &spaces) == nil
+	}, "the cache writes")
+	_ = online.tm.Quit() // only one flow at a time talks to the fake
+
+	f.mu.Lock()
+	f.down = true
+	f.mu.Unlock()
+	offline := startFlowWith(t, f, st)
+	offline.see("Deploy is blocked")
+	offline.see("Google had a problem (503), try again · showing cached messages")
+
+	// When live updates connect, the space list and the space reload.
+	f.post("spaces/A", "", "users/bob", "fixed it")
+	f.mu.Lock()
+	f.down = false
+	f.mu.Unlock()
+	offline.tm.Send(liveMsg{})
+	offline.see("fixed it")
 }

@@ -35,6 +35,8 @@ type fakeChat struct {
 	uploads map[string][]byte
 	// failSends makes message creation fail with 503.
 	failSends bool
+	// down makes every request fail with 503.
+	down bool
 }
 
 const fakeMe = "users/me1"
@@ -158,6 +160,8 @@ func (f *fakeChat) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch {
+	case f.down:
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
 	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/upload/v1/") && strings.HasSuffix(path, "/attachments:upload"):
 		f.upload(w, r)
 	case r.Method == http.MethodPost && path == "spaces/-/messages:search":

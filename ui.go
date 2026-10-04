@@ -126,10 +126,16 @@ type model struct {
 
 	// Caching, see cache.go. loading is set while the open space fetches,
 	// and arrived holds the live messages that come in meanwhile.
-	mem     map[string]*cachedSpace
-	store   *store
-	loading bool
-	arrived []*chat.Message
+	mem   map[string]*cachedSpace
+	store *store
+	// spacesStale means the space list came from the cache, so it reloads
+	// once live updates connect.
+	spacesStale bool
+	// loadFailed means the open space shows a disk snapshot its load
+	// couldn't replace, so it isn't kept as current.
+	loadFailed bool
+	loading    bool
+	arrived    []*chat.Message
 
 	members  map[string][]member // by space, for @mention completion
 	drafts   map[string]draft    // by draftKey
@@ -179,12 +185,60 @@ func (m model) waitEvent() tea.Msg {
 	return eventMsg{<-m.events}
 }
 
+// loadSpaces lists the spaces, or falls back to the cached list when the
+// API can't be reached.
 func (m model) loadSpaces() tea.Msg {
 	s, err := m.c.spaces(m.ctx)
-	if err != nil {
+	if err == nil {
+		return spacesMsg(s)
+	}
+	cached, cerr := cachedSpaces(m.store)
+	if cerr != nil || len(cached) == 0 {
 		return errMsg(err)
 	}
-	return spacesMsg(s)
+	return cachedSpacesMsg{cached, err}
+}
+
+// applySpaces takes a new space list and opens the open space again, or
+// the first one.
+func (m *model) applySpaces(list []space) tea.Cmd {
+	openName := ""
+	if m.cur >= 0 {
+		openName = m.spaces[m.cur].name
+	}
+	m.titles, m.titleChecked = loadTitleCache(m.c.me)
+	// Picked before the placeholders below fill in the empty titles.
+	cmds := []tea.Cmd{m.loadTitleChunk(titlesToRefresh(list, m.titles, m.titleChecked, time.Now()))}
+	m.spaces = list
+	m.status = ""
+	for i, s := range m.spaces {
+		if s.title != "" {
+			continue
+		}
+		t, ok := m.titles[s.name]
+		m.spaces[i].hidden = ok && t == ""
+		m.spaces[i].title = cmp.Or(t, s.name)
+	}
+	spaces := slices.Clone(m.spaces)
+	known := maps.Clone(m.readTimes)
+	cmds = append(cmds, func() tea.Msg { return unreadMsg(m.c.unread(m.ctx, spaces, known)) }, m.loadSections)
+	if len(m.spaces) > 0 {
+		cmds = append(cmds, m.open(max(0, m.spaceIndex(openName))))
+	}
+	return tea.Batch(cmds...)
+}
+
+// loadFailedMsg reports that a space's messages didn't load. A snapshot
+// shown meanwhile stays.
+type loadFailedMsg struct {
+	space string
+	err   error
+}
+
+// cachedSpacesMsg is the cached space list, shown when listing failed.
+type cachedSpacesMsg struct {
+	spaces []space
+	err    error
 }
 
 // titleChunk is how many untitled spaces one lookup round covers. Spaces
@@ -214,7 +268,7 @@ func (m model) loadMessages(space, lastRead string, known map[string]string) tea
 		}
 		threads, next, err := m.c.threads(m.ctx, space, historySize, "")
 		if err != nil {
-			return errMsg(err)
+			return loadFailedMsg{space, err}
 		}
 		m.c.markNew(m.ctx, threads, lastRead, known)
 		if err := m.c.markRead(m.ctx, space); err != nil {
@@ -259,27 +313,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case cachedSpacesMsg:
+		slog.Warn("space list", "err", msg.err)
+		cmd := m.applySpaces(msg.spaces)
+		m.spacesStale = true
+		m.status = errStyle.Render(describeErr(msg.err) + " · showing cached spaces")
+		return m, cmd
+
 	case spacesMsg:
-		m.titles, m.titleChecked = loadTitleCache(m.c.me)
-		// Picked before the placeholders below fill in the empty titles.
-		cmds := []tea.Cmd{m.loadTitleChunk(titlesToRefresh(msg, m.titles, m.titleChecked, time.Now()))}
-		m.spaces = msg
-		m.status = ""
-		for i, s := range m.spaces {
-			if s.title != "" {
-				continue
-			}
-			t, ok := m.titles[s.name]
-			m.spaces[i].hidden = ok && t == ""
-			m.spaces[i].title = cmp.Or(t, s.name)
-		}
-		spaces := slices.Clone(m.spaces)
-		known := maps.Clone(m.readTimes)
-		cmds = append(cmds, func() tea.Msg { return unreadMsg(m.c.unread(m.ctx, spaces, known)) }, m.loadSections)
-		if len(m.spaces) > 0 {
-			cmds = append(cmds, m.open(0))
-		}
-		return m, tea.Batch(cmds...)
+		m.spacesStale = false
+		// Saved first: applying fills empty titles with placeholders, and
+		// the cache keeps them empty so the title cache names them.
+		save := m.saveSpaces(msg)
+		return m, tea.Batch(save, m.applySpaces(msg))
 
 	case unreadMsg:
 		for i, s := range m.spaces {
@@ -455,10 +501,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return next, tea.Batch(cmd, m.waitEvent)
 
 	case liveMsg:
-		if msg.err != nil && m.live {
+		if (msg.err != nil) == m.live {
+			// Spaces kept while live updates were down may have missed
+			// events, in both directions of the switch.
 			m.liveLost()
 		}
 		m.live, m.liveErr = msg.err == nil, msg.err
+		if m.live && m.spacesStale {
+			// Back online after starting without network.
+			return m, m.loadSpaces
+		}
 		return m, nil
 
 	case messageRef:
@@ -508,6 +560,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for i, s := range m.spaces {
 			m.spaces[i].section = msg[s.name]
 		}
+		return m, nil
+
+	case loadFailedMsg:
+		slog.Warn("space load", "space", msg.space, "err", msg.err)
+		if m.cur < 0 || m.spaces[m.cur].name != msg.space {
+			return m, nil
+		}
+		m.loading, m.loadFailed = false, true
+		why := describeErr(msg.err)
+		if len(m.threads) > 0 {
+			why += " · showing cached messages"
+		}
+		m.status = errStyle.Render(why)
 		return m, nil
 
 	case errMsg:
@@ -810,6 +875,7 @@ func fuzzy(pattern, s string) bool {
 func (m *model) open(i int) tea.Cmd {
 	m.saveDraft()
 	stash := m.stash()
+	m.loadFailed = false
 	m.cur = i
 	m.threads = nil
 	m.loading, m.arrived = false, nil

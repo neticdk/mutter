@@ -15,6 +15,7 @@ Terminal client for Google Chat, for Workspace organizations.
 - Spaces and images cached locally and encrypted, so switching spaces and restarting are fast
 - Cards rendered as text, images and animated GIFs drawn in the terminal, and Drive, Meet and Calendar links labeled
 - Search across all spaces with `/find`
+- Starts without network from the local cache, and catches up once Google is reachable
 - File upload, download and open, and images pasted from the clipboard or dropped on the terminal
 - GIF search through GIPHY with `/gif`, when you set your own API key
 
@@ -254,6 +255,7 @@ mutter keeps spaces and processed images in the user cache directory, `~/Library
 - **Encryption**: files are encrypted with AES-GCM. The key is in the OS keychain next to the login token, so a copied cache file can't be read.
 - **Size**: spaces are capped at 50 MB and images at 200 MB. The least recently used are removed at startup.
 - **Freshness**: while live updates run, a space opened earlier in the session shows from memory with no fetch. After a restart, a space shows its cached copy, marked `refreshing…`, until the fresh load replaces it.
+- **Offline**: when Google can't be reached at startup, mutter starts with the cached space list and shows each space's cached copy. Once live updates connect, the list and the open space reload. Your identity is kept unencrypted in `identity.json` next to the cache.
 - **Removal**: `/logout` deletes the cache and its key.
 
 ### Permissions
