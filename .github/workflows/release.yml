@@ -11,23 +11,23 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
       - run: go test ./...
       # A short-lived token from the release app, limited to the tap, which
       # GITHUB_TOKEN can't reach.
       - id: tap-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
           client-id: ${{ vars.TAP_APP_CLIENT_ID }}
           private-key: ${{ secrets.TAP_APP_PRIVATE_KEY }}
           owner: neticdk
           repositories: netic-homebrew-tap
-      - uses: goreleaser/goreleaser-action@v7
+      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
         with:
           # renovate: datasource=github-releases depName=goreleaser/goreleaser
           version: v2.18.2
