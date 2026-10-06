@@ -1,11 +1,11 @@
 # Running mutter in an organization
 
 What an organization takes on when it adopts mutter: setup, Pub/Sub cost and the standing with Google.
-Written 2026-10-06 against commit `6f33aae`.
+Written 2026-10-06, last updated against commit `15e2df6`.
 
 ## Setup effort
 
-### Today: shared topic
+### Shared topic
 
 - One GCP project, one run of `mutter admin setup`, and three console steps it walks through (Chat app config, Internal OAuth branding, Desktop OAuth client).
 - The admin publishes a config with the client and topic. Users install the public release and run `mutter config import`.
@@ -13,14 +13,15 @@ Written 2026-10-06 against commit `6f33aae`.
 - Pub/Sub subscriptions unused for 31 days delete themselves.
 - Without a topic, mutter still works and refreshes when a space is opened.
 
-### Isolation needs admin provisioning
+### Per-user topics need provisioning
 
 - On the shared topic, any member of the group can attach an unfiltered subscription and see every user's event metadata (see [Isolating users](../README.md#isolating-users)).
 - Per-user isolation can't be self-service:
     - Attaching a subscription needs `pubsub.topics.attachSubscription` on the topic. Granting it project-wide restores the exposure.
     - IAM Conditions can't tie a resource-name prefix to the caller's identity.
-- An admin must create a topic and subscription per user. [Provisioning per-user topics](#provisioning-per-user-topics) automates this.
-- New joiners have no live updates until the job runs.
+    - Pulling from a subscription needs `pubsub.subscriptions.consume`, and a creator gets none on what it creates.
+- An admin creates a topic and subscription per user. `mutter admin setup` does this once, and `mutter admin provision` keeps it current on a schedule, see [Provisioning per-user topics](#provisioning-per-user-topics).
+- New joiners have no live updates until the next run.
 
 ## Provisioning per-user topics
 

@@ -321,7 +321,6 @@ Planned improvements are in [ROADMAP.md](ROADMAP.md). The ones under Chat API ca
 - At startup, spaces with no activity for 30 days count as read.
 - History loads 200 messages at a time.
 - Without live updates, every space switch fetches again, since nothing keeps the cached copy current.
-- There's no message search.
 - DMs and group chats whose other members have all left the organization are hidden.
 - Only one account at a time.
 
@@ -347,6 +346,7 @@ Planned improvements are in [ROADMAP.md](ROADMAP.md). The ones under Chat API ca
 - The first start takes about 30 seconds to resolve DM and group-chat names. Later starts use a cache.
 - Live updates need a Pub/Sub topic. Without one, mutter only refreshes when a space is opened.
 - On the shared topic, group members can see each other's event metadata. See [Isolating users](#isolating-users).
+- With per-user topics, two machines running mutter at once split the user's live updates between them. Opening a space still loads it in full.
 
 ### Platforms
 

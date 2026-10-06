@@ -36,6 +36,7 @@ Everything is one `main` package, split into files by concern:
 | `attach.go` | downloading, saving and opening files |
 | `image.go` | images and GIFs over the kitty graphics protocol |
 | `format.go` | Chat markup, cards, quotes, message bodies |
+| `apicount.go` | the HTTP client for Google APIs, counting calls per method at debug level |
 | `logging.go` | slog setup, levels including trace, the log location |
 | `errors.go` | error messages for the status line, returning failed sends to the input |
 
