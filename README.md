@@ -188,7 +188,7 @@ To use a different OAuth client, for example during development, write it to `~/
 | ctrl+x | remove the last image waiting to be sent |
 | ctrl+b | show or hide the sidebar of unread and recent spaces. It hides itself in windows narrower than 100 columns. |
 | alt+1…9, ctrl+1…9 | open a sidebar entry. alt needs option-as-alt on macOS, ctrl works without it. |
-| ctrl+n | open the next unread space, in the switcher's order |
+| ctrl+n | open the next thread with new messages in the open space, oldest first. With none left, open the next unread space, in the switcher's order. |
 | ctrl+k | switch space. The filter matches names and sidebar sections, and `✎` marks spaces with a draft. |
 | ↑ ↓ with an empty input | select a thread, or a message inside a thread |
 | ↑ on the oldest thread | load older history |

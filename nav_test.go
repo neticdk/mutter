@@ -118,3 +118,26 @@ func TestWantMessage(t *testing.T) {
 		t.Error("a skipped message didn't move the muted space's last activity")
 	}
 }
+
+func TestFirstUnreadThread(t *testing.T) {
+	read := &thread{name: "read"}
+	newRoot := &thread{name: "root", rootNew: true}
+	newReplies := &thread{name: "replies", unseen: 2}
+	for _, tc := range []struct {
+		name    string
+		threads []*thread
+		open    *thread
+		want    int
+	}{
+		{"none", []*thread{read}, nil, -1},
+		{"first new, oldest first", []*thread{read, newReplies, newRoot}, nil, 1},
+		{"skips the open thread", []*thread{read, newReplies, newRoot}, newReplies, 2},
+		{"empty", nil, nil, -1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := firstUnreadThread(tc.threads, tc.open); got != tc.want {
+				t.Errorf("firstUnreadThread = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}

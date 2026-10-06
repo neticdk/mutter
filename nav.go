@@ -366,9 +366,18 @@ func (m model) fetchMessage(ref messageRef) tea.Cmd {
 	}
 }
 
-// nextUnread opens the first unread space in the switcher's order, other
-// than the open one.
+// nextUnread opens the first thread with new messages in the open space,
+// oldest first. With none left, it opens the first unread space in the
+// switcher's order.
 func (m *model) nextUnread() tea.Cmd {
+	if i := firstUnreadThread(m.threads, m.inThread); i >= 0 {
+		t := m.threads[i]
+		m.saveDraft()
+		m.cursor = i
+		m.setThread(t)
+		m.loadDraft()
+		return m.imgs.fetch(m.ctx, m.c, t.msgs)
+	}
 	var idx []int
 	for i, s := range m.spaces {
 		if s.unread && !s.hidden && i != m.cur {
@@ -376,9 +385,17 @@ func (m *model) nextUnread() tea.Cmd {
 		}
 	}
 	if len(idx) == 0 {
-		m.notice = "no unread spaces"
+		m.notice = "nothing unread"
 		return nil
 	}
 	sortSpaces(m.spaces, idx)
 	return m.open(idx[0])
+}
+
+// firstUnreadThread is the index of the first thread with new messages,
+// skipping open, which is being read, or -1.
+func firstUnreadThread(threads []*thread, open *thread) int {
+	return slices.IndexFunc(threads, func(t *thread) bool {
+		return t != open && (t.rootNew || t.unseen > 0)
+	})
 }

@@ -308,10 +308,19 @@ func TestFlowNextUnreadAndLinks(t *testing.T) {
 	fl := startFlow(t, f)
 	fl.see("in incidents") // the most recently active space opens first
 
-	fl.tm.Send(tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
+	// ctrl+n reads the open space's new threads first, then moves on to
+	// the next unread space and its threads.
+	next := func() { fl.tm.Send(tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl}) }
+	next()
+	fl.see("› thread")
+	fl.see("in incidents")
+	next()
 	fl.see("in platform")
-	fl.tm.Send(tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
-	fl.see("no unread spaces")
+	fl.waitFor(func() bool { return !strings.Contains(fl.screen(), "› thread") }, "the space view of Platform")
+	next()
+	fl.see("› thread")
+	next()
+	fl.see("nothing unread")
 
 	fl.key(tea.KeyUp)
 	fl.key('c')

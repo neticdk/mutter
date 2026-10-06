@@ -17,7 +17,7 @@ var (
 		{"esc", "cancel, end selection, leave thread"},
 		{"tab shift+tab", "complete @mention, /dm or :emoji:"},
 		{keySwitch, "switch space"},
-		{keyNext, "next unread space"},
+		{keyNext, "next unread thread or space"},
 		{"ctrl+b", "toggle the sidebar"},
 		{"alt+1…9 ctrl+1…9", "open a sidebar entry"},
 		{"ctrl+v", "paste an image"},
