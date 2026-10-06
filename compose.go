@@ -121,6 +121,7 @@ const (
 	completeMention = iota
 	completeDM
 	completeEmoji
+	completeCommand
 )
 
 // completionQuery finds what's being completed at the end of text: the
@@ -129,6 +130,9 @@ const (
 func completionQuery(text string) (q string, start, kind int, ok bool) {
 	if rest, found := strings.CutPrefix(text, "/dm "); found && rest != "" && !strings.ContainsRune(rest, '\n') {
 		return rest, len("/dm "), completeDM, true
+	}
+	if strings.HasPrefix(text, "/") && !strings.ContainsAny(text, " \t\n") {
+		return text, 0, completeCommand, true
 	}
 	mq, mat, mok := mentionQuery(text)
 	eq, eat, eok := emojiQuery(text)
@@ -161,6 +165,15 @@ func (m *model) suggestions() ([]suggestion, int) {
 				label += " " + dimStyle.Render(p.email)
 			}
 			out = append(out, suggestion{label: label, insert: cmp.Or(p.email, p.name)})
+		}
+	case completeCommand:
+		cmds := suggestCommands(q)
+		for _, c := range cmds[:min(len(cmds), maxCommandSuggestions)] {
+			label := c[0]
+			if len(cmds) == 1 {
+				label += " " + dimStyle.Render(c[1])
+			}
+			out = append(out, suggestion{label: label, insert: c[0] + " "})
 		}
 	case completeMention:
 		for _, p := range suggest(m.members[m.spaces[m.cur].name], q) {
@@ -357,4 +370,22 @@ func (m *model) editDraft() tea.Cmd {
 		b, err := os.ReadFile(path) // #nosec G304 -- the temp file created above
 		return editedMsg{strings.TrimRight(string(b), "\n"), err}
 	})
+}
+
+// maxCommandSuggestions keeps command suggestions on the status line.
+const maxCommandSuggestions = 8
+
+// suggestCommands returns the commands starting with prefix, with their
+// help text, in the help overlay's order. A help row such as "/read [all]"
+// or "/mute /unmute" names one or more commands.
+func suggestCommands(prefix string) [][2]string {
+	var out [][2]string
+	for _, row := range helpCommands {
+		for _, w := range strings.Fields(row[0]) {
+			if strings.HasPrefix(w, "/") && strings.HasPrefix(w, prefix) {
+				out = append(out, [2]string{w, row[1]})
+			}
+		}
+	}
+	return out
 }

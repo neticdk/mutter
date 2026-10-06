@@ -615,3 +615,19 @@ func TestFlowTriage(t *testing.T) {
 	fl.see("triage done, nothing unread")
 	fl.waitFor(func() bool { return !strings.Contains(fl.screen(), "· triage") }, "triage to end")
 }
+
+func TestFlowCompleteCommand(t *testing.T) {
+	f := newFakeChat(t)
+	f.addSpace("spaces/A", "Platform")
+	f.post("spaces/A", "", "users/alice", "Deploy is blocked")
+
+	fl := startFlow(t, f)
+	fl.see("Deploy is blocked")
+
+	// A single match shows its help text, and tab completes it.
+	fl.typeText("/men")
+	fl.see("tab → /mentions messages that mention you")
+	fl.key(tea.KeyTab)
+	fl.key(tea.KeyEnter)
+	fl.see("no mentions of you")
+}

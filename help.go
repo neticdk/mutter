@@ -15,7 +15,7 @@ var (
 		{"↑ ↓", "select a thread or message"},
 		{"pgup pgdown", "scroll"},
 		{"esc", "cancel, end selection, leave thread"},
-		{"tab shift+tab", "complete @mention, /dm or :emoji:"},
+		{"tab shift+tab", "complete /cmd, @mention, :emoji:"},
 		{keySwitch, "switch space"},
 		{keyNext, "next unread thread or space"},
 		{"ctrl+b", "toggle the sidebar"},

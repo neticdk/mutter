@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -62,5 +63,34 @@ func TestParseAttach(t *testing.T) {
 	}
 	if _, _, err := parseAttach(`/attach "/tmp/x`); err == nil {
 		t.Error("unclosed quote should fail")
+	}
+}
+
+func TestSuggestCommands(t *testing.T) {
+	names := func(p string) []string {
+		var out []string
+		for _, c := range suggestCommands(p) {
+			out = append(out, c[0])
+		}
+		return out
+	}
+	for _, tc := range []struct {
+		prefix string
+		want   []string
+	}{
+		{"/re", []string{"/rename", "/read"}},
+		{"/un", []string{"/unmute", "/unread"}},
+		{"/mute", []string{"/mute"}},
+		{"/nope", nil},
+	} {
+		if got := names(tc.prefix); !slices.Equal(got, tc.want) {
+			t.Errorf("suggestCommands(%q) = %v, want %v", tc.prefix, got, tc.want)
+		}
+	}
+	if q, _, kind, ok := completionQuery("/fi"); !ok || kind != completeCommand || q != "/fi" {
+		t.Errorf("completionQuery(/fi) = %q, %d, %v", q, kind, ok)
+	}
+	if _, _, kind, _ := completionQuery("/dm kn"); kind != completeDM {
+		t.Error("/dm arguments should complete people")
 	}
 }
