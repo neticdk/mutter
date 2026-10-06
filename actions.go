@@ -561,12 +561,35 @@ func (m *model) webCmd() {
 	m.openLink(webURL(m.spaces[m.cur], thread, ""))
 }
 
+const needsKitty = "viewing images needs the kitty graphics protocol, as in Ghostty"
+
 // viewImage shows msg's first image or GIF at the size of the message pane.
 // ponytail: only the first image, add paging when messages with several
 // images come up.
 func (m *model) viewImage(msg *chat.Message) tea.Cmd {
 	if !m.imgs.enabled {
-		m.notice = "viewing images needs the kitty graphics protocol, as in Ghostty"
+		m.notice = needsKitty
+		return nil
+	}
+	for _, a := range msg.Attachment {
+		if ref := imageRef(a); ref != "" {
+			return m.viewRef(ref)
+		}
+	}
+	for _, g := range msg.AttachedGifs {
+		if firstHTTPS(g.Uri) != "" {
+			return m.viewRef(g.Uri)
+		}
+	}
+	m.notice = "no image in this message"
+	return nil
+}
+
+// viewRef opens the viewer on image ref: an attachment's resource name or
+// a GIF's URL.
+func (m *model) viewRef(ref string) tea.Cmd {
+	if !m.imgs.enabled {
+		m.notice = needsKitty
 		return nil
 	}
 	lay := layout{
@@ -575,23 +598,36 @@ func (m *model) viewImage(msg *chat.Message) tea.Cmd {
 		maxCols: max(1, m.vp.Width()-2),
 		maxRows: min(len(diacritics), max(1, m.vp.Height()-1)),
 	}
+	m.viewing = viewRef(ref)
+	if strings.HasPrefix(ref, "https://") {
+		return m.imgs.fetchURL(m.ctx, m.viewing, ref, lay)
+	}
 	ctx := m.ctx
-	for _, a := range msg.Attachment {
-		if ref := imageRef(a); ref != "" {
-			m.viewing = viewRef(ref)
-			return m.imgs.fetchWith(m.viewing, lay, func() (*http.Response, error) {
-				return m.c.svc.Media.Download(ref).Context(ctx).Download()
-			})
-		}
+	return m.imgs.fetchWith(m.viewing, lay, func() (*http.Response, error) {
+		return m.c.svc.Media.Download(ref).Context(ctx).Download()
+	})
+}
+
+// imageClick opens the viewer on the image clicked at x, y on screen, if
+// any. Custom emoji aren't images to view.
+func (m *model) imageClick(x, y int) (tea.Cmd, bool) {
+	if m.sidebarShown() {
+		x -= sidebarWidth + 1 // the border
 	}
-	for _, g := range msg.AttachedGifs {
-		if firstHTTPS(g.Uri) != "" {
-			m.viewing = viewRef(g.Uri)
-			return m.imgs.fetchURL(ctx, m.viewing, g.Uri, lay)
-		}
+	row := y - 1 + m.vp.YOffset() // the header takes the first line
+	lines := strings.Split(m.vp.GetContent(), "\n")
+	if x < 0 || y < 1 || y > m.vp.Height() || row >= len(lines) {
+		return nil, false
 	}
-	m.notice = "no image in this message"
-	return nil
+	id, ok := placeholderAt(lines[row], x)
+	if !ok {
+		return nil, false
+	}
+	i := m.imgs.byID[id]
+	if i == nil || strings.HasPrefix(i.ref, "emoji/") || strings.HasPrefix(i.ref, "view|") {
+		return nil, false
+	}
+	return m.viewRef(i.ref), true
 }
 
 // viewerView is the image viewer's pane: the image centered, or a note

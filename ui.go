@@ -301,8 +301,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.MouseClickMsg:
+		if m.viewing != "" {
+			m.viewing = ""
+			m.render() // the viewer's image leaves the screen
+			return m, nil
+		}
 		if ms := msg.Mouse(); ms.Button == tea.MouseLeft {
 			if cmd, ok := m.sidebarClick(ms.X, ms.Y); ok {
+				return m, cmd
+			}
+			if cmd, ok := m.imageClick(ms.X, ms.Y); ok {
 				return m, cmd
 			}
 		}
@@ -1412,9 +1420,9 @@ func (m model) View() tea.View {
 	v.AltScreen = true
 	v.ReportFocus = true
 	v.WindowTitle = windowTitle(unread, m.currentTitle())
-	if m.sidebarShown() {
-		// Clicks reach the sidebar. Most terminals still select text with
-		// shift held.
+	if m.sidebarShown() || m.imgs.enabled {
+		// Clicks reach the sidebar and images. Most terminals still select
+		// text with shift held.
 		v.MouseMode = tea.MouseModeCellMotion
 	}
 	return v

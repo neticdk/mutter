@@ -209,12 +209,12 @@ While a thread or message is selected, letter keys act on it. Any other key goes
 | `l` | open a link in it. With several, pick one with `1`–`9`. |
 | `c` | copy a link to it in the web client |
 | `b` | open it in the web client, for what mutter can't do, such as calls, polls and card buttons |
-| `v` | view its first image or GIF at the size of the message pane. Any key closes it. |
+| `v` | view its first image or GIF at the size of the message pane. Clicking an image does the same. Any key or click closes it. |
 | `u` | mark the space unread from this message onward |
 | `o` | open its files |
 | `s` | save its files to `~/Downloads` |
 
-While the sidebar shows, clicking an entry opens it and the scroll wheel scrolls messages. The terminal then passes clicks to mutter, so select text with shift held.
+While the sidebar or images show, the terminal passes clicks to mutter: clicking a sidebar entry opens it, clicking an image views it, and the scroll wheel scrolls messages. Select text with shift held.
 
 Dropping an image file on the terminal pastes its path, and mutter attaches the file in place of the path.
 

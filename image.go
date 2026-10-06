@@ -58,6 +58,7 @@ type layout struct {
 }
 
 type img struct {
+	ref            string
 	id, cols, rows int
 	ready          bool
 
@@ -162,7 +163,7 @@ func (im *images) fetchWith(ref string, lay layout, do func() (*http.Response, e
 	if !im.enabled || im.byRef[ref] != nil {
 		return nil
 	}
-	im.byRef[ref] = &img{}
+	im.byRef[ref] = &img{ref: ref}
 	st := im.store
 	return func() tea.Msg { return cachedDownload(st, ref, do, lay) }
 }
@@ -471,6 +472,42 @@ func (im *images) render(ref string) string {
 	}
 	i.visible = true
 	return kittyPlaceholder(i.id, i.cols, i.rows)
+}
+
+// placeholderAt returns the image ID of the placeholder cells at column x
+// of a rendered line. The ID is the cells' foreground color, which lipgloss
+// writes as a basic ANSI code below 16 and as 38;5;N above.
+func placeholderAt(line string, x int) (int, bool) {
+	start := strings.Index(line, "\U0010EEEE")
+	if start < 0 {
+		return 0, false
+	}
+	prefix := line[:start]
+	col := lipgloss.Width(prefix)
+	cells := lipgloss.Width(line[start : strings.LastIndex(line, "\U0010EEEE")+len("\U0010EEEE")])
+	if x < col || x >= col+cells {
+		return 0, false
+	}
+	sgr := prefix[strings.LastIndex(prefix, "\x1b[")+1:]
+	end := strings.IndexByte(sgr, 'm')
+	if !strings.HasPrefix(sgr, "[") || end < 0 {
+		return 0, false
+	}
+	params := strings.Split(sgr[1:end], ";")
+	for i := 0; i < len(params); i++ {
+		n, err := strconv.Atoi(params[i])
+		switch {
+		case err != nil:
+		case n == 38 && i+2 < len(params) && params[i+1] == "5":
+			id, err := strconv.Atoi(params[i+2])
+			return id, err == nil
+		case n >= 30 && n <= 37:
+			return n - 30, true
+		case n >= 90 && n <= 97:
+			return n - 90 + 8, true
+		}
+	}
+	return 0, false
 }
 
 // kittyClear deletes every image ID mutter uses, along with their

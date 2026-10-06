@@ -180,3 +180,32 @@ func TestFitSize(t *testing.T) {
 		}
 	}
 }
+
+func TestPlaceholderAt(t *testing.T) {
+	// A thread block's border and indent put the image at column 4, 4
+	// cells wide.
+	border := threadStyle.Render("x")[:strings.Index(threadStyle.Render("x"), "x")]
+	for _, tc := range []struct {
+		name string
+		id   int
+		x    int
+		ok   bool
+	}{
+		{"256-color id", 200, 5, true},
+		{"basic color id", 5, 4, true},
+		{"bright basic id", 12, 7, true},
+		{"left of the image", 200, 3, false},
+		{"right of the image", 200, 8, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			line := border + "  " + strings.Split(kittyPlaceholder(tc.id, 4, 2), "\n")[1]
+			id, ok := placeholderAt(line, tc.x)
+			if ok != tc.ok || ok && id != tc.id {
+				t.Errorf("placeholderAt = %d, %v, want %d, %v", id, ok, tc.id, tc.ok)
+			}
+		})
+	}
+	if _, ok := placeholderAt("plain text", 0); ok {
+		t.Error("a line without placeholders matched")
+	}
+}
