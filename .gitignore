@@ -4,3 +4,6 @@ logs/
 /dist
 /coverage.out
 /coverage.html
+
+# Organization configs that mutter admin setup writes, with the client secret.
+/mutter-*.json

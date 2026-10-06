@@ -67,10 +67,11 @@ func (f *fakeGCP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	reply := func(v any) { _ = json.NewEncoder(w).Encode(v) } // a failed write fails the client's call
 	resource, verb, _ := strings.Cut(path, ":")
 	switch {
-	case strings.HasSuffix(path, "/memberships"):
-		var out []map[string]any
-		for _, m := range f.members {
-			out = append(out, map[string]any{"name": "groups/g1/memberships/" + m.id, "type": "USER", "preferredMemberKey": map[string]string{"id": m.email}})
+	case strings.HasSuffix(path, "/memberships:searchTransitiveMemberships"):
+		// A nested team group and a user in two teams, as the API lists them.
+		out := []map[string]any{{"member": "groups/team2", "preferredMemberKey": []map[string]string{{"id": "team2@x.dk"}}}}
+		for _, m := range append(f.members, f.members[0]) {
+			out = append(out, map[string]any{"member": "users/" + m.id, "preferredMemberKey": []map[string]string{{"id": m.email}}})
 		}
 		reply(map[string]any{"memberships": out})
 	case r.Method == http.MethodGet && strings.HasSuffix(path, "/topics"):

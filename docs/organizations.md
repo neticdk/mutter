@@ -47,6 +47,15 @@ It reconciles the project with the group and is safe to run any time. It creates
 - The viewer role lets the user's own Workspace Events subscription reach the topic. It's untested whether the API needs it, and it exposes nothing.
 - Remove the group's project-wide `roles/pubsub.editor` from an earlier shared setup, or the isolation does nothing.
 
+### Several teams
+
+Use one parent group, such as `mutter-users`, with the team groups as its members, and give provisioning the parent.
+
+- Provisioning reads members transitively, so everyone in a nested team group gets a topic. Someone in two teams gets one.
+- Team leads manage their own team group, and access follows on the next run without changes to provisioning.
+- Provisioning deletes the resources of anyone missing from the group it's given. Running it once per team would delete the other teams' topics, so always give it the one parent group.
+- Shared mode doesn't extend to several teams. Its group role covers the whole project, so every team could read every other team's event metadata. Teams that want their own shared topic set up their own project.
+
 ### Running it on a schedule
 
 `mutter admin provision` uses the gcloud login when gcloud is installed, and Application Default Credentials otherwise. A scheduler needs only the mutter binary:
@@ -66,7 +75,7 @@ A daily run is enough. Run it by hand to give a new joiner live updates the same
 
 ### Verified and unverified
 
-- Verified on 2026-10-06: Cloud Identity lists the group's users with their account IDs, the same IDs mutter derives names from.
+- Verified on 2026-10-06: Cloud Identity's transitive membership search lists the group's users as `users/<id>`, the same account IDs mutter derives names from.
 - Verified on 2026-10-06, as the project owner: per-user live updates work end to end with provisioned resources.
 - `mutter admin setup` and `mutter admin provision` are tested against a fake of the APIs, not yet against a real project.
 - Whether a user who isn't a project owner needs the viewer role on their topic. Provisioning grants it either way.

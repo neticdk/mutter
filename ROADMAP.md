@@ -80,6 +80,6 @@ Measure with the API call counts in `mutter.log` at `MUTTER_LOG_LEVEL=debug` bef
 
 - [x] Per-user Pub/Sub topics, see [Isolating users](README.md#isolating-users): `topic_project` in the config, set up with `mutter admin setup` and kept current with `mutter admin provision`
 - [x] Help overlay with keys and commands, on `/help` or F1
-- [x] **Admin setup**: `mutter admin setup` replaces `setup.sh` with an interactive setup, and `mutter admin provision` replaces the provisioning script
+- [x] **Admin setup**: `mutter admin setup` replaces `setup.sh` with an interactive setup, and `mutter admin provision` replaces the provisioning script and reads nested groups, so one parent group can hold several teams
 
 Ideas that aren't planned, and what the Chat API blocks, are in [IDEAS.md](IDEAS.md).

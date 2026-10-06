@@ -167,15 +167,20 @@ func (g *gcp) lookupGroup(ctx context.Context, email string) (string, error) {
 // stays the same, and the email, which IAM uses.
 type groupMember struct{ id, email string }
 
-// members lists the group's users. A membership's name ends in the
-// member's account ID.
+// members lists the group's users, including those of groups nested in
+// it, so one parent group can hold several teams. Each user counts once,
+// however many teams they're in.
 func (g *gcp) members(ctx context.Context, group string) ([]groupMember, error) {
 	var out []groupMember
-	err := g.ident.Groups.Memberships.List(group).View("FULL").Pages(ctx, func(r *cloudidentity.ListMembershipsResponse) error {
+	seen := map[string]bool{}
+	err := g.ident.Groups.Memberships.SearchTransitiveMemberships(group).Pages(ctx, func(r *cloudidentity.SearchTransitiveMembershipsResponse) error {
 		for _, m := range r.Memberships {
-			if m.Type == "USER" && m.PreferredMemberKey != nil {
-				out = append(out, groupMember{id: lastSegment(m.Name), email: m.PreferredMemberKey.Id})
+			id, user := strings.CutPrefix(m.Member, "users/")
+			if !user || seen[id] || len(m.PreferredMemberKey) == 0 {
+				continue // a nested group, or a user listed twice
 			}
+			seen[id] = true
+			out = append(out, groupMember{id: id, email: m.PreferredMemberKey[0].Id})
 		}
 		return nil
 	})

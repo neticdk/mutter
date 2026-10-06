@@ -127,7 +127,7 @@ Recommended beyond one team. A topic per user in the shared project, with resour
 | Subscription `mutter-user-<id>` | user | the user has `roles/pubsub.subscriber` on this subscription only |
 | Project-wide Pub/Sub role | nobody | users can't attach to topics they weren't given |
 
-- `mutter admin provision` creates these for every member of the group and runs on a schedule. See [Provisioning per-user topics](docs/organizations.md#provisioning-per-user-topics).
+- `mutter admin provision` creates these for every member of the group, including members of groups nested in it, and runs on a schedule. For several teams, give it one parent group holding the team groups. See [Provisioning per-user topics](docs/organizations.md#provisioning-per-user-topics).
 - `<id>` is the user's numeric Google account ID, which stays the same when their email changes.
 - mutter derives both names from the ID and creates no Pub/Sub resources. It still creates the user's Workspace Events subscriptions, which deliver to the user's topic.
 - One subscription per user means two machines running mutter at once split the events between them, so each misses some live updates. Opening a space still loads it in full.
