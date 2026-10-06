@@ -20,6 +20,7 @@ var (
 		{keyNext, "next unread thread or space"},
 		{"ctrl+b", "toggle the sidebar"},
 		{"alt+1…9 ctrl+1…9", "open a sidebar entry"},
+		{"ctrl+e", "edit the draft in $EDITOR"},
 		{"ctrl+v", "paste an image"},
 		{"ctrl+x", "drop the last pending image"},
 		{"f1", "this help, also /help"},

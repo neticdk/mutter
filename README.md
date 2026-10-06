@@ -184,6 +184,7 @@ To use a different OAuth client, for example during development, write it to `~/
 |---|---|
 | enter | send, or open the selected thread when the input is empty |
 | shift+enter, alt+enter, ctrl+j | newline. Pasted text keeps its newlines and never sends early. |
+| ctrl+e | edit the input in `$VISUAL` or `$EDITOR`, `vi` by default. The text comes back when the editor exits. The End key moves to the end of the line. |
 | ctrl+v | paste an image from the clipboard to send with the next message, or text when there's no image. cmd+v belongs to the terminal, which pastes text and file paths but never images. |
 | ctrl+x | remove the last image waiting to be sent |
 | ctrl+b | show or hide the sidebar of unread and recent spaces. It hides itself in windows narrower than 100 columns. |

@@ -74,7 +74,7 @@ Measure with the API call counts in `mutter.log` at `MUTTER_LOG_LEVEL=debug` bef
 - [x] **Mark read**: `/read` for the open space and `/read all` for every space, through `updateSpaceReadState`
 - [x] **@all**: completion offers `@all` in spaces, sent as `<users/all>`
 - [x] **Click to view images**: clicking an image opens the viewer, which takes mouse reporting whenever images are on, so text selection needs shift
-- [ ] **Compose in `$EDITOR`**: ctrl+e opens the draft in the editor and puts the result back in the input
+- [x] **Compose in `$EDITOR`**: ctrl+e opens the draft in the editor and puts the result back in the input
 
 ## 7. Rollout to colleagues
 

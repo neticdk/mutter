@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -544,4 +546,24 @@ func TestFlowMentionAll(t *testing.T) {
 	fl.see("heads up @all")
 	fl.key(tea.KeyEnter)
 	fl.sent("spaces/A", "heads up <users/all>")
+}
+
+func TestFlowEditDraft(t *testing.T) {
+	editor := filepath.Join(t.TempDir(), "editor")
+	if err := os.WriteFile(editor, []byte("#!/bin/sh\nprintf ' and more\\n' >> \"$1\"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VISUAL", editor)
+	f := newFakeChat(t)
+	f.addSpace("spaces/A", "Platform")
+	f.post("spaces/A", "", "users/alice", "Deploy is blocked")
+
+	fl := startFlow(t, f)
+	fl.see("Deploy is blocked")
+
+	fl.typeText("hello")
+	fl.tm.Send(tea.KeyPressMsg{Code: 'e', Mod: tea.ModCtrl})
+	fl.see("hello and more")
+	fl.key(tea.KeyEnter)
+	fl.sent("spaces/A", "hello and more")
 }

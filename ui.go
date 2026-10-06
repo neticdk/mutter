@@ -458,6 +458,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case gifResultsMsg:
 		return m, m.showGIFs(msg)
 
+	case editedMsg:
+		if msg.err != nil {
+			m.status = errStyle.Render(msg.err.Error())
+			return m, nil
+		}
+		m.ta.SetValue(msg.text)
+		return m, nil
+
 	case pastedMsg:
 		m.pending = append(m.pending, pending(msg))
 		m.notice = "attached " + msg.name + ", it goes with the next message"
@@ -710,6 +718,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.complete(tabStep(msg.String())) {
 				return m, nil
 			}
+		case "ctrl+e":
+			return m, m.editDraft()
 		case "ctrl+v":
 			slog.Debug("paste: ctrl+v")
 			return m, pasteImage

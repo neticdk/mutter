@@ -4,9 +4,11 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -324,4 +326,35 @@ func (c *client) uploadData(ctx context.Context, space, name string, data io.Rea
 		return nil, err
 	}
 	return r.AttachmentDataRef, nil
+}
+
+type editedMsg struct {
+	text string
+	err  error
+}
+
+// editDraft opens the input in $VISUAL or $EDITOR, vi by default, and puts
+// the result back when the editor exits. The temp file is private and
+// removed afterwards.
+func (m *model) editDraft() tea.Cmd {
+	f, err := os.CreateTemp("", "mutter-*.md")
+	if err != nil {
+		return func() tea.Msg { return errMsg(err) }
+	}
+	path := f.Name()
+	_, werr := f.WriteString(m.ta.Value())
+	if err := errors.Join(werr, f.Close()); err != nil {
+		_ = os.Remove(path) // best effort, the write already failed
+		return func() tea.Msg { return errMsg(err) }
+	}
+	editor := strings.Fields(cmp.Or(os.Getenv("VISUAL"), os.Getenv("EDITOR"), "vi"))
+	cmd := exec.Command(editor[0], append(editor[1:], path)...) // #nosec G204 G702 -- the editor is the user's own setting
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		defer os.Remove(path)
+		if err != nil {
+			return editedMsg{err: fmt.Errorf("editor: %w", err)}
+		}
+		b, err := os.ReadFile(path) // #nosec G304 -- the temp file created above
+		return editedMsg{strings.TrimRight(string(b), "\n"), err}
+	})
 }
