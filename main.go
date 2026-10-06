@@ -19,6 +19,13 @@ func main() {
 		fmt.Println("mutter", version)
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "admin" {
+		if err := adminMain(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "mutter admin:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "config" {
 		if err := configMain(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, "mutter config:", err)

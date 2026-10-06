@@ -29,49 +29,25 @@ An admin does this once. Users then only log in.
 - A GCP project inside your Workspace organization, and the Owner role on it.
 - A Google group containing everyone who will use mutter.
 - `gcloud` logged in as that owner (`gcloud auth login`).
-- Go 1.27 or newer (see `go.mod`).
 
-### 1. Run the setup script
+### Run the setup
 
 ```
-./scripts/setup.sh PROJECT_ID USERS_GROUP_EMAIL
+mutter admin setup
 ```
 
-The script does the following, and it is safe to re-run:
+It asks for the project, the live update mode and the users' group, then:
 
-- enables the Chat, Workspace Events and Pub/Sub APIs
-- creates the Pub/Sub topic `mutter-events`
-- lets Google Chat publish to the topic (`chat-api-push@system.gserviceaccount.com` gets Pub/Sub Publisher)
-- lets the group create Pub/Sub subscriptions (`roles/pubsub.editor` on the project)
+- enables the Chat, Workspace Events, Pub/Sub and Cloud Identity APIs
+- creates the Pub/Sub resources. A shared topic, `mutter-events`, with the group allowed to create subscriptions, or a topic and subscription per member. See [Isolating users](#isolating-users).
+- walks through the three console steps that have no API: the Chat app configuration, OAuth branding with an Internal audience, and a Desktop OAuth client
+- asks for the client ID and secret, and writes the organization's config to `mutter-<project>.json`
 
-It finishes by printing direct links for the three console steps below.
+Every step is safe to repeat, so a setup that stopped halfway runs again from the start.
 
-`roles/pubsub.editor` covers the whole project, which exposes event metadata between users. See [Isolating users](#isolating-users).
+### Distribute the config
 
-### 2. Configure the Chat app
-
-The Chat API rejects calls until the project has a Chat app configuration, even though mutter only acts as the user.
-
-1. Open *APIs & Services → Google Chat API → Configuration*.
-2. Set an app name (`mutter`), an avatar URL and a description.
-3. Turn off *Interactive features*. mutter never receives events as a bot.
-4. Save.
-
-### 3. Configure OAuth branding
-
-1. Open *Google Auth Platform → Branding*.
-2. Set the app name (`mutter`) and the support email.
-3. Under *Audience*, choose **Internal**. That limits logins to your organization and skips Google's app verification.
-
-### 4. Create the OAuth client
-
-1. Open *Google Auth Platform → Clients → Create client*.
-2. Choose application type **Desktop app** and name it `mutter`.
-3. Copy the client ID and client secret.
-
-### 5. Distribute the config
-
-Write the organization's config and publish it where users can fetch it, such as an intranet page or a private repository. Desktop client secrets are not confidential, because Google treats installed apps as public clients.
+Publish the config `mutter admin setup` wrote where users can fetch it, such as an intranet page or a private repository. Desktop client secrets are not confidential, because Google treats installed apps as public clients.
 
 ```json
 {
@@ -89,9 +65,11 @@ An organization that would rather hand out a binary can bake the values in. A bu
 MUTTER_CLIENT_ID=<ID> MUTTER_CLIENT_SECRET=<SECRET> MUTTER_TOPIC=projects/<PROJECT_ID>/topics/mutter-events just build
 ```
 
-On start, mutter subscribes the user to events from all their spaces through the Workspace Events API, delivered to the topic. Each machine pulls from its own filtered Pub/Sub subscription, which deletes itself after 31 days unused.
+For per-user topics, set `MUTTER_TOPIC_PROJECT=<PROJECT_ID>` in place of `MUTTER_TOPIC`.
 
-### 6. Publish releases
+On start, mutter subscribes the user to events from all their spaces through the Workspace Events API, delivered to the topic. On a shared topic, each machine pulls from its own filtered Pub/Sub subscription, which deletes itself after 31 days unused. With per-user topics, mutter pulls from the user's provisioned subscription.
+
+### Publish releases
 
 Releases build in GitHub Actions when a `v*` tag is pushed, with GoReleaser (`.goreleaser.yaml`, `.github/workflows/release.yml`). They cover macOS and Linux on amd64 and arm64, and carry no organization's client or topic, so one release serves every organization. The workflow needs one secret:
 
@@ -129,7 +107,7 @@ The script downloads the archive for the machine, checks it against `checksums.t
 
 ### Isolating users
 
-mutter supports both: a shared topic, as set up above, and a topic per user, with `setup.sh --per-user` and `topic_project` in the config.
+mutter supports both: a shared topic, and a topic per user. `mutter admin setup` asks which.
 
 #### Exposure on a shared topic
 
@@ -149,7 +127,7 @@ Recommended beyond one team. A topic per user in the shared project, with resour
 | Subscription `mutter-user-<id>` | user | the user has `roles/pubsub.subscriber` on this subscription only |
 | Project-wide Pub/Sub role | nobody | users can't attach to topics they weren't given |
 
-- A provisioning script creates these for every member of the group and runs on a schedule. See [Provisioning per-user topics](docs/organizations.md#provisioning-per-user-topics).
+- `mutter admin provision` creates these for every member of the group and runs on a schedule. See [Provisioning per-user topics](docs/organizations.md#provisioning-per-user-topics).
 - `<id>` is the user's numeric Google account ID, which stays the same when their email changes.
 - mutter derives both names from the ID and creates no Pub/Sub resources. It still creates the user's Workspace Events subscriptions, which deliver to the user's topic.
 - One subscription per user means two machines running mutter at once split the events between them, so each misses some live updates. Opening a space still loads it in full.

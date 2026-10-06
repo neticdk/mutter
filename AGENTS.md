@@ -11,6 +11,8 @@ Everything is one `main` package, split into files by concern:
 | File | Owns |
 |---|---|
 | `main.go` | wiring, logging and cache setup, the `config` subcommand dispatch |
+| `admin.go` | `mutter admin provision` and the Google Cloud calls admin commands make |
+| `adminsetup.go` | `mutter admin setup`, the interactive project setup |
 | `config.go` | `config.json`, its check, and `mutter config init`, `edit` and `import` |
 | `auth.go` | OAuth login with PKCE, token storage in the keychain |
 | `chat.go` | Chat API client: spaces, threads, sending, title cache |
@@ -37,7 +39,7 @@ Everything is one `main` package, split into files by concern:
 | `logging.go` | slog setup, levels including trace, the log location |
 | `errors.go` | error messages for the status line, returning failed sends to the input |
 
-`scripts/` holds `setup.sh`, the one-time GCP setup for admins, and `install.sh`, the install fallback for machines without Homebrew.
+`scripts/` holds `install.sh`, the install fallback for machines without Homebrew.
 `docs/` holds notes for admins, such as the cost and policy of running mutter in an organization.
 
 Add a package only when a second consumer needs the code.
