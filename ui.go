@@ -807,6 +807,8 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 		return m, m.renameCmd(strings.TrimPrefix(text, "/rename"))
 	case "/invite":
 		return m, m.inviteCmd(strings.TrimPrefix(text, "/invite"))
+	case "/read":
+		return m, m.readCmd(strings.TrimPrefix(text, "/read"))
 	case "/mute":
 		return m, m.setMute(mutedSetting)
 	case "/unmute":

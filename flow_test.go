@@ -505,3 +505,27 @@ func TestFlowMute(t *testing.T) {
 		t.Errorf("mute setting = %q", got)
 	}
 }
+
+func TestFlowRead(t *testing.T) {
+	f := newFakeChat(t)
+	f.addSpace("spaces/A", "Platform")
+	f.addSpace("spaces/B", "Incidents")
+	f.post("spaces/A", "", "users/alice", "in platform")
+	root := f.post("spaces/B", "", "users/bob", "pager went off")
+	f.post("spaces/B", root.Thread.Name, "users/carol", "on it")
+	f.post("spaces/B", root.Thread.Name, "users/carol", "fixed")
+
+	fl := startFlow(t, f)
+	fl.see("2 new")
+	fl.see("1 unread space")
+
+	fl.typeText("/read")
+	fl.key(tea.KeyEnter)
+	fl.see("marked Incidents read")
+	fl.waitFor(func() bool { return !strings.Contains(fl.screen(), "2 new") }, "the thread markers to clear")
+
+	fl.typeText("/read all")
+	fl.key(tea.KeyEnter)
+	fl.see("marked 1 space read")
+	fl.waitFor(func() bool { return !strings.Contains(fl.screen(), "unread space") }, "the unread count to clear")
+}

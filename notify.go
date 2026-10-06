@@ -227,6 +227,42 @@ func (c *client) setting(ctx context.Context, space string) (*chat.SpaceNotifica
 	return s, nil
 }
 
+// readCmd runs /read, which marks the open space and all its threads
+// read, and /read all, which marks every unread space read. Thread read
+// state can't be written, so thread markers clear only in mutter.
+func (m *model) readCmd(arg string) tea.Cmd {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	if strings.TrimSpace(arg) == "all" {
+		var cmds []tea.Cmd
+		n := 0
+		for i, s := range m.spaces {
+			if s.unread && !s.hidden {
+				m.spaces[i].unread = false
+				cmds = append(cmds, m.markRead(s.name))
+				n++
+			}
+		}
+		for _, t := range m.threads {
+			m.c.threadRead(t, now)
+		}
+		m.notice = fmt.Sprintf("marked %d %s read", n, plural(n, "space", "spaces"))
+		m.rc.clear() // thread markers changed
+		m.render()
+		return tea.Batch(cmds...)
+	}
+	if m.cur < 0 {
+		return nil
+	}
+	for _, t := range m.threads {
+		m.c.threadRead(t, now)
+	}
+	m.newBelow = 0
+	m.notice = "marked " + m.spaces[m.cur].title + " read"
+	m.rc.clear() // thread markers changed
+	m.render()
+	return m.markRead(m.spaces[m.cur].name)
+}
+
 // muteMsg reports a space muted or unmuted with /mute or /unmute.
 type muteMsg struct {
 	space string

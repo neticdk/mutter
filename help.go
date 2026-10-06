@@ -50,6 +50,7 @@ var (
 		{"/gif QUERY", "search GIPHY, needs GIPHY_API_KEY"},
 		{"/open [n]", "open a file"},
 		{"/save [n]", "save a file to ~/Downloads"},
+		{"/read [all]", "mark the space, or all, read"},
 		{"/unread", "mark unread from the thread"},
 		{"/dnd [DURATION]", "Do Not Disturb"},
 		{cmdAway, "show as away"},

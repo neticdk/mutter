@@ -233,6 +233,8 @@ Dropping an image file on the terminal pastes its path, and mutter attaches the 
 | `/attach PATH [text]` | upload a file into the open thread, or as a new thread. Quote paths with spaces. |
 | `/open [n]` | open file `n` of the selected or open thread, the last one by default |
 | `/save [n]` | save file `n` to `~/Downloads` |
+| `/read` | mark the open space and its threads read |
+| `/read all` | mark every unread space read |
 | `/unread` | mark the space unread from the selected or open thread onward |
 | `/dnd [DURATION]` | Do Not Disturb, for an hour or a duration such as `30m` or `2h` |
 | `/away` | show as away until you're active again |
