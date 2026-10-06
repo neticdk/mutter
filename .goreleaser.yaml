@@ -30,11 +30,12 @@ homebrew_casks:
       # The tap's main branch only accepts pull requests.
       pull_request:
         enabled: true
-    hooks:
-      post:
-        # The binary isn't signed, and Gatekeeper blocks quarantined
-        # unsigned binaries.
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/mutter"]
-          end
+    # The binary isn't signed, and Gatekeeper blocks quarantined unsigned
+    # binaries. Homebrew deprecates postflight blocks, which hooks produce,
+    # in favor of declarative steps.
+    custom_block: |
+      postflight_steps do
+        on_macos do
+          run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ "{{" }}staged_path{{ "}}" }}/mutter"]
+        end
+      end
