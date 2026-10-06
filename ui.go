@@ -100,6 +100,7 @@ type model struct {
 	newBelow   int    // threads that arrived below the cursor
 	notice     string // shown in place of the hints until the next key press
 	help       bool   // the help overlay covers the messages
+	triage     bool   // /triage: enter and replies move to the next unread thread
 	viewing    string // image ref the viewer shows over the messages, or ""
 	found      []hit  // /find and /mentions results
 	foundTitle string // what the results are, such as "mentions"
@@ -539,6 +540,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.render()
 			m.finishGoto()
+			if m.triage {
+				return m, tea.Batch(m.imgs.fetch(m.ctx, m.c, rootsOf(m.threads)), m.persist(msg.space, m.threads, m.olderToken), m.triageStep())
+			}
 			return m, tea.Batch(m.imgs.fetch(m.ctx, m.c, rootsOf(m.threads)), m.persist(msg.space, m.threads, m.olderToken))
 		}
 		return m, nil
@@ -730,6 +734,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		case keyEsc:
+			if m.triage {
+				m.triage = false
+				m.notice = "triage stopped"
+			}
 			switch {
 			case m.editing != nil || m.quoting != nil:
 				if m.editing != nil {
@@ -746,6 +754,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.render()
 			return m, nil
 		case keyEnter:
+			if m.triage && m.ta.Value() == "" && len(m.pending) == 0 {
+				return m, m.triageStep()
+			}
+			if m.triage && m.editing == nil && !strings.HasPrefix(m.ta.Value(), "/") {
+				// A reply goes out, then triage moves on.
+				next, send := m.submit()
+				nm, ok := next.(model)
+				if !ok {
+					return next, send
+				}
+				step := nm.triageStep() // changes nm, so before nm is returned
+				return nm, tea.Batch(send, step)
+			}
 			// With files pending, enter sends them, even without text.
 			if t := m.target(); m.ta.Value() == "" && len(m.pending) == 0 && m.inThread == nil && t != nil {
 				m.saveDraft()
@@ -819,6 +840,9 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 		return m, m.inviteCmd(strings.TrimPrefix(text, "/invite"))
 	case "/read":
 		return m, m.readCmd(strings.TrimPrefix(text, "/read"))
+	case "/triage":
+		m.triage = true
+		return m, m.triageStep()
 	case "/mute":
 		return m, m.setMute(mutedSetting)
 	case "/unmute":
@@ -1391,6 +1415,10 @@ func (m model) View() tea.View {
 	if m.inThread != nil {
 		title += " › thread"
 		hint = "enter reply · esc back · ↑/↓ scroll · ctrl+k switch · /help · /quit"
+	}
+	if m.triage {
+		title += " · triage"
+		hint = "triage: enter sends a reply and moves on · enter alone moves on · ↑ selects · esc stops"
 	}
 	body := m.vp.View()
 	switch {

@@ -41,6 +41,7 @@ var (
 	helpCommands = [][2]string{
 		{"/find QUERY", "search all spaces"},
 		{"/mentions", "messages that mention you"},
+		{"/triage", "work through unread threads"},
 		{"/dm WHO", "open or start a DM"},
 		{"/new NAME", "create a space"},
 		{"/rename NAME", "rename the space"},

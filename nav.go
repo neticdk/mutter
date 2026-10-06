@@ -371,13 +371,29 @@ func (m model) fetchMessage(ref messageRef) tea.Cmd {
 // switcher's order.
 func (m *model) nextUnread() tea.Cmd {
 	if i := firstUnreadThread(m.threads, m.inThread); i >= 0 {
-		t := m.threads[i]
-		m.saveDraft()
-		m.cursor = i
-		m.setThread(t)
-		m.loadDraft()
-		return m.imgs.fetch(m.ctx, m.c, t.msgs)
+		return m.openThreadAt(i)
 	}
+	i, ok := m.nextUnreadSpace()
+	if !ok {
+		m.notice = "nothing unread"
+		return nil
+	}
+	return m.open(i)
+}
+
+// openThreadAt opens the open space's thread i, as enter does.
+func (m *model) openThreadAt(i int) tea.Cmd {
+	t := m.threads[i]
+	m.saveDraft()
+	m.cursor = i
+	m.setThread(t)
+	m.loadDraft()
+	return m.imgs.fetch(m.ctx, m.c, t.msgs)
+}
+
+// nextUnreadSpace is the first unread space in the switcher's order, other
+// than the open one.
+func (m *model) nextUnreadSpace() (int, bool) {
 	var idx []int
 	for i, s := range m.spaces {
 		if s.unread && !s.hidden && i != m.cur {
@@ -385,11 +401,34 @@ func (m *model) nextUnread() tea.Cmd {
 		}
 	}
 	if len(idx) == 0 {
-		m.notice = "nothing unread"
-		return nil
+		return 0, false
 	}
 	sortSpaces(m.spaces, idx)
-	return m.open(idx[0])
+	return idx[0], true
+}
+
+// triageStep moves triage to the next unread thread: in the open space,
+// or else in the next unread space once it has loaded. With nothing left,
+// triage ends.
+func (m *model) triageStep() tea.Cmd {
+	if i := firstUnreadThread(m.threads, m.inThread); i >= 0 {
+		return m.openThreadAt(i)
+	}
+	if m.loading {
+		return nil // messagesMsg continues
+	}
+	i, ok := m.nextUnreadSpace()
+	if !ok {
+		m.triage = false
+		m.setThread(nil)
+		m.notice = "triage done, nothing unread"
+		return nil
+	}
+	cmd := m.open(i)
+	if m.loading {
+		return cmd
+	}
+	return tea.Batch(cmd, m.triageStep()) // shown from memory
 }
 
 // firstUnreadThread is the index of the first thread with new messages,

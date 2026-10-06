@@ -567,3 +567,51 @@ func TestFlowEditDraft(t *testing.T) {
 	fl.key(tea.KeyEnter)
 	fl.sent("spaces/A", "hello and more")
 }
+
+// lastName is the name of the newest message in space.
+func lastName(f *fakeChat, space string) string {
+	msgs := f.messages(space)
+	return msgs[len(msgs)-1].Name
+}
+
+func TestFlowTriage(t *testing.T) {
+	f := newFakeChat(t)
+	f.addSpace("spaces/A", "Platform")
+	f.addSpace("spaces/B", "Incidents")
+	a := f.post("spaces/A", "", "users/alice", "Deploy is blocked")
+	f.post("spaces/A", a.Thread.Name, "users/bob", "since when?")
+	b := f.post("spaces/B", "", "users/carol", "pager went off")
+	f.post("spaces/B", b.Thread.Name, "users/dave", "on it")
+
+	fl := startFlow(t, f)
+	fl.see("pager went off")
+
+	// Esc stops triage.
+	fl.typeText("/triage")
+	fl.key(tea.KeyEnter)
+	fl.see("· triage")
+	fl.key(tea.KeyEscape)
+	fl.see("triage stopped")
+
+	// Triage starts in the open space's unread thread. The one esc left is
+	// read now, so mark it new again through the fake's next reply.
+	f.post("spaces/B", b.Thread.Name, "users/dave", "on it")
+	fl.tm.Send(messageRef{kind: kindCreated, name: lastName(f, "spaces/B")})
+	fl.typeText("/triage")
+	fl.key(tea.KeyEnter)
+	fl.see("· triage")
+	fl.see("on it")
+
+	// A reply goes out and triage moves on to the next space's thread.
+	fl.typeText("ack")
+	fl.key(tea.KeyEnter)
+	if msg := fl.sent("spaces/B", "ack"); msg.Thread == nil || msg.Thread.Name != b.Thread.Name {
+		t.Errorf("the reply went to %+v", msg.Thread)
+	}
+	fl.see("since when?")
+
+	// Enter alone moves on, and with nothing left triage ends.
+	fl.key(tea.KeyEnter)
+	fl.see("triage done, nothing unread")
+	fl.waitFor(func() bool { return !strings.Contains(fl.screen(), "· triage") }, "triage to end")
+}
