@@ -1,6 +1,5 @@
 logs/
 /mutter
-/client
 /dist
 /coverage.out
 /coverage.html
