@@ -22,9 +22,10 @@ import (
 
 // Chat API values compared in several places.
 const (
-	allUsers      = "users/all"
-	mutedSetting  = "MUTED"
-	directMessage = "DIRECT_MESSAGE"
+	allUsers       = "users/all"
+	mutedSetting   = "MUTED"
+	unmutedSetting = "UNMUTED"
+	directMessage  = "DIRECT_MESSAGE"
 )
 
 type client struct {

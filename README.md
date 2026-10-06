@@ -229,6 +229,7 @@ Dropping an image file on the terminal pastes its path, and mutter attaches the 
 | `/rename NAME` | rename the open space |
 | `/invite WHO` | add someone to the open space. `WHO` works as in `/dm`. |
 | `/leave` | leave the open space, confirmed with `y` |
+| `/mute`, `/unmute` | mute or unmute the open space, as in the web client. A muted space never notifies and doesn't count as unread. |
 | `/attach PATH [text]` | upload a file into the open thread, or as a new thread. Quote paths with spaces. |
 | `/open [n]` | open file `n` of the selected or open thread, the last one by default |
 | `/save [n]` | save file `n` to `~/Downloads` |
@@ -276,7 +277,7 @@ The first run asks the user to grant these OAuth scopes. mutter asks again whene
 | `chat.messages` | reading, sending, editing and deleting messages, reactions, attachments |
 | `chat.memberships` | DM titles, @mention completion, `/invite` and `/leave` |
 | `chat.users.readstate` | unread state |
-| `chat.users.spacesettings` | notification and mute settings |
+| `chat.users.spacesettings` | notification and mute settings, `/mute` and `/unmute` |
 | `chat.users.sections.readonly` | sidebar sections |
 | `chat.users.availability` | your Do Not Disturb, away state and status |
 | `chat.customemojis.readonly` | custom emoji in completion, the reaction picker, reactions and messages |

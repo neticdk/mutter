@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -39,6 +40,8 @@ type fakeChat struct {
 	down bool
 	// invited holds members added through the API, by space.
 	invited map[string][]string
+	// muted holds the mute setting patched through the API, by setting name.
+	muted map[string]string
 }
 
 const fakeMe = "users/me1"
@@ -55,7 +58,7 @@ func emojiKey(e *chat.Emoji) string {
 }
 
 func newFakeChat(t testing.TB) *fakeChat {
-	return &fakeChat{t: t, uploads: map[string][]byte{}, invited: map[string][]string{}, msgs: map[string][]*chat.Message{}, reacts: map[string][]*chat.Reaction{}, clock: time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)}
+	return &fakeChat{t: t, uploads: map[string][]byte{}, invited: map[string][]string{}, muted: map[string]string{}, msgs: map[string][]*chat.Message{}, reacts: map[string][]*chat.Reaction{}, clock: time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)}
 }
 
 // tick returns a timestamp later than every earlier one.
@@ -316,7 +319,12 @@ func (f *fakeChat) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Read up to the start, so everything posted in the test is new.
 		reply(chat.SpaceReadState{Name: path, LastReadTime: "2026-10-01T09:00:00Z"})
 	case strings.HasSuffix(path, "/spaceNotificationSetting"):
-		reply(chat.SpaceNotificationSetting{Name: path, NotificationSetting: "ALL", MuteSetting: "UNMUTED"})
+		if r.Method == http.MethodPatch {
+			var in chat.SpaceNotificationSetting
+			decode(&in)
+			f.muted[path] = in.MuteSetting
+		}
+		reply(chat.SpaceNotificationSetting{Name: path, NotificationSetting: "ALL", MuteSetting: cmp.Or(f.muted[path], "UNMUTED")})
 	case path == "users/me/availability":
 		reply(chat.Availability{Name: path, State: "ACTIVE"})
 	case path == "users/me/sections":

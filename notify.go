@@ -9,6 +9,8 @@ import (
 	"time"
 	"unicode"
 
+	tea "charm.land/bubbletea/v2"
+
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/chat/v1"
 )
@@ -223,6 +225,31 @@ func (c *client) setting(ctx context.Context, space string) (*chat.SpaceNotifica
 	c.settings[space] = s
 	c.settingsMu.Unlock()
 	return s, nil
+}
+
+// muteMsg reports a space muted or unmuted with /mute or /unmute.
+type muteMsg struct {
+	space string
+	muted bool
+}
+
+// setMute runs /mute or /unmute on the open space, with setting MUTED or
+// UNMUTED.
+func (m *model) setMute(setting string) tea.Cmd {
+	if m.cur < 0 {
+		return nil
+	}
+	space, c, ctx := m.spaces[m.cur].name, m.c, m.ctx
+	return func() tea.Msg {
+		s, err := c.svc.Users.Spaces.SpaceNotificationSetting.Patch("users/me/"+space+"/spaceNotificationSetting", &chat.SpaceNotificationSetting{MuteSetting: setting}).UpdateMask("muteSetting").Context(ctx).Do()
+		if err != nil {
+			return errMsg(fmt.Errorf("mute: %w", err))
+		}
+		c.settingsMu.Lock()
+		c.settings[space] = s
+		c.settingsMu.Unlock()
+		return muteMsg{space, s.MuteSetting == mutedSetting}
+	}
 }
 
 // mentions reports whether msg @mentions the user, directly or as @all.

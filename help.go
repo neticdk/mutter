@@ -45,6 +45,7 @@ var (
 		{"/rename NAME", "rename the space"},
 		{"/invite WHO", "add someone to the space"},
 		{"/leave", "leave the space"},
+		{"/mute /unmute", "silence the space"},
 		{"/attach PATH [text]", "upload a file"},
 		{"/gif QUERY", "search GIPHY, needs GIPHY_API_KEY"},
 		{"/open [n]", "open a file"},

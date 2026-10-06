@@ -363,6 +363,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case muteMsg:
+		if i := m.spaceIndex(msg.space); i >= 0 {
+			m.spaces[i].muted = msg.muted
+			m.spaces[i].unread = m.spaces[i].unread && !msg.muted
+			verb := "unmuted "
+			if msg.muted {
+				verb = "muted "
+			}
+			m.notice = verb + m.spaces[i].title
+		}
+		return m, nil
+
 	case threadReadMsg:
 		space := spaceOf(msg.thread)
 		threads := m.threads
@@ -795,6 +807,10 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 		return m, m.renameCmd(strings.TrimPrefix(text, "/rename"))
 	case "/invite":
 		return m, m.inviteCmd(strings.TrimPrefix(text, "/invite"))
+	case "/mute":
+		return m, m.setMute(mutedSetting)
+	case "/unmute":
+		return m, m.setMute(unmutedSetting)
 	case "/mentions":
 		return m, m.mentionsCmd()
 	case "/find":

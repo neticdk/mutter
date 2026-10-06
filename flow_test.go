@@ -478,3 +478,30 @@ func TestFlowMentions(t *testing.T) {
 	fl.see("2 mentions")
 	fl.waitFor(func() bool { return !strings.Contains(fl.screen(), "unread") }, "both mentions to count as read")
 }
+
+func TestFlowMute(t *testing.T) {
+	f := newFakeChat(t)
+	f.addSpace("spaces/A", "Platform")
+	f.post("spaces/A", "", "users/alice", "Deploy is blocked")
+
+	fl := startFlow(t, f)
+	fl.see("Deploy is blocked")
+
+	setting := func() string {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		return f.muted["users/me/spaces/A/spaceNotificationSetting"]
+	}
+	fl.typeText("/mute")
+	fl.key(tea.KeyEnter)
+	fl.see("muted Platform")
+	if got := setting(); got != "MUTED" {
+		t.Errorf("mute setting = %q", got)
+	}
+	fl.typeText("/unmute")
+	fl.key(tea.KeyEnter)
+	fl.see("unmuted Platform")
+	if got := setting(); got != "UNMUTED" {
+		t.Errorf("mute setting = %q", got)
+	}
+}
