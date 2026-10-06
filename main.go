@@ -11,13 +11,60 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
+// usage is the --help text, with this machine's paths filled in.
+func usage() string {
+	path := func(p string, err error) string {
+		if err != nil {
+			return "unknown: " + err.Error()
+		}
+		return p
+	}
+	cache, err := cachePath("")
+	cfg, cerr := configPath()
+	logs, lerr := logDir()
+	return fmt.Sprintf(`mutter, a terminal client for Google Chat
+
+Usage:
+  mutter                                   start the client
+  mutter config init [--force]             write an empty config to fill in
+  mutter config edit                       open the config in $VISUAL or $EDITOR, and check it
+  mutter config import [--force] FILE|URL  install a config from a file or an https URL
+  mutter admin setup                       set up a Google Cloud project for mutter (admins)
+  mutter admin provision PROJECT GROUP     give each member of GROUP a topic, for per-user topics
+  mutter --version                         print the version
+  mutter --help                            print this help
+
+Inside mutter, F1 or /help lists keys and commands.
+
+Environment:
+  MUTTER_LOG_LEVEL   trace, debug, info, warn or error. Default warn.
+  GIPHY_API_KEY      your GIPHY API key, which turns on /gif
+  VISUAL, EDITOR     the editor for ctrl+e and mutter config edit. Default vi.
+
+Files:
+  config  %s
+  logs    %s
+  cache   %s
+`, path(cfg, cerr), path(logs, lerr), path(cache, err))
+}
+
 // version is set by the release build.
 var version = "dev"
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "--version" {
-		fmt.Println("mutter", version)
-		return
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "-h", "--help", "help":
+			fmt.Print(usage())
+			return
+		case "--version":
+			fmt.Println("mutter", version)
+			return
+		case "config", "admin":
+		default:
+			fmt.Fprintf(os.Stderr, "mutter: unknown argument %q\n\n%s", os.Args[1], usage())
+			os.Exit(2)
+		}
 	}
 	if len(os.Args) > 1 && os.Args[1] == "admin" {
 		if err := adminMain(os.Args[2:]); err != nil {

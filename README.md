@@ -183,6 +183,8 @@ A build with values baked in through `-ldflags` uses them when there is no confi
 
 ## Usage
 
+`mutter --help` lists the commands, the environment variables mutter reads, and where its config, logs and cache live. Inside mutter, F1 or `/help` lists the keys and commands.
+
 ```
 ./mutter
 ```
