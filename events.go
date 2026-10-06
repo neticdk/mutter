@@ -132,6 +132,10 @@ func runEvents(ctx context.Context, hc *http.Client, c *client, cfg config, out 
 
 func (e *events) run(ctx context.Context) error {
 	spaces, err := e.ensureWorkspaceSub(ctx, eventTarget, eventTypes)
+	if err != nil && e.sub != "" {
+		// Google answers a missing topic with a permission error too.
+		return fmt.Errorf("topic %s is missing or not yours, ask your admin to provision it: %w", lastSegment(e.topic), err)
+	}
 	if err != nil {
 		return fmt.Errorf("workspace events subscription: %w", err)
 	}
