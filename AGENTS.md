@@ -37,6 +37,7 @@ Everything is one `main` package, split into files by concern:
 | `errors.go` | error messages for the status line, returning failed sends to the input |
 
 `scripts/` holds `setup.sh`, the one-time GCP setup for admins, and `install.sh`, the install fallback for machines without Homebrew.
+`docs/` holds notes for admins, such as the cost and policy of running mutter in an organization.
 
 Add a package only when a second consumer needs the code.
 

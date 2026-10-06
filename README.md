@@ -142,7 +142,7 @@ Per-user topics in the shared project, with resources an admin creates:
 | Subscription `mutter-<user>` | user | the user has `roles/pubsub.subscriber` on this subscription only |
 | Project-wide Pub/Sub role | nobody | users can't attach to topics they weren't given |
 
-- The setup script creates these for every member of the group, and is re-run when people join.
+- A provisioning script creates these for every member of the group and runs on a schedule. See [Provisioning per-user topics](docs/organizations.md#provisioning-per-user-topics).
 - mutter derives the topic and subscription names from the user's email and stops creating subscriptions itself.
 - One subscription per user means two machines running mutter at once split the events between them. mutter should detect this and warn.
 
@@ -150,9 +150,11 @@ Per-user topics in the shared project, with resources an admin creates:
 
 | Option | Isolation | Cost |
 |---|---|---|
-| Shared topic (current) | metadata visible within the group | none |
+| Shared topic (current) | metadata visible within the group | Pub/Sub delivery grows with users², since filtered-out messages are billed |
 | Topic per user in a shared project (recommended) | full | admin-created topics and subscriptions |
 | Project per user | full | each user needs a billing-enabled project they own, and runs setup themselves |
+
+[Running mutter in an organization](docs/organizations.md) estimates the cost and covers Google's terms.
 
 ## Setup (per user)
 
