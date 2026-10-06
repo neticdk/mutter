@@ -193,7 +193,7 @@ To use a different OAuth client, for example during development, write it to `~/
 | ↑ ↓ with an empty input | select a thread, or a message inside a thread |
 | ↑ on the oldest thread | load older history |
 | pgup, pgdown | scroll |
-| tab, shift+tab | complete an @mention, a `/dm` argument or a `:shortcode`. Repeated presses cycle through the suggestions. |
+| tab, shift+tab | complete an @mention, `@all` in spaces, a `/dm` argument or a `:shortcode`. Repeated presses cycle through the suggestions. |
 | esc | cancel editing or quoting, end selection, leave the thread |
 | F1 | show keys and commands, as `/help` does. Any key closes it, and typed characters go to the input. |
 

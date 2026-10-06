@@ -72,7 +72,7 @@ Measure with the API call counts in `mutter.log` at `MUTTER_LOG_LEVEL=debug` bef
 - [ ] **Triage mode**: step through every unread thread in every space, one at a time, with reply, react, mark read, skip and open
 - [x] **Mute and unmute**: `/mute` and `/unmute` through `spaceNotificationSetting.patch`
 - [x] **Mark read**: `/read` for the open space and `/read all` for every space, through `updateSpaceReadState`
-- [ ] **@all**: completion offers `@all`, sent as `<users/all>`, unverified
+- [x] **@all**: completion offers `@all` in spaces, sent as `<users/all>`
 - [x] **Click to view images**: clicking an image opens the viewer, which takes mouse reporting whenever images are on, so text selection needs shift
 - [ ] **Compose in `$EDITOR`**: ctrl+e opens the draft in the editor and puts the result back in the input
 

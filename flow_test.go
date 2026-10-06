@@ -529,3 +529,19 @@ func TestFlowRead(t *testing.T) {
 	fl.see("marked 1 space read")
 	fl.waitFor(func() bool { return !strings.Contains(fl.screen(), "unread space") }, "the unread count to clear")
 }
+
+func TestFlowMentionAll(t *testing.T) {
+	f := newFakeChat(t)
+	f.addSpace("spaces/A", "Platform")
+	f.post("spaces/A", "", "users/alice", "Deploy is blocked")
+
+	fl := startFlow(t, f)
+	fl.see("Deploy is blocked")
+
+	fl.typeText("heads up @al")
+	fl.see("tab → @all")
+	fl.key(tea.KeyTab)
+	fl.see("heads up @all")
+	fl.key(tea.KeyEnter)
+	fl.sent("spaces/A", "heads up <users/all>")
+}

@@ -164,6 +164,10 @@ func (m *model) suggestions() ([]suggestion, int) {
 		for _, p := range suggest(m.members[m.spaces[m.cur].name], q) {
 			out = append(out, suggestion{label: "@" + p.name, insert: "@" + p.name + " ", mention: "@" + p.name, token: "<" + p.id + ">"})
 		}
+		// @all notifies everyone in a space, which a DM doesn't need.
+		if !m.spaces[m.cur].dm && strings.HasPrefix("all", strings.ToLower(q)) { //nolint:gocritic // what's typed is a prefix of "all", not the reverse
+			out = append(out, suggestion{label: "@all", insert: "@all ", mention: "@all", token: "<" + allUsers + ">"})
+		}
 	case completeEmoji:
 		for _, e := range m.reactResults(q) {
 			if e.uid != "" {
