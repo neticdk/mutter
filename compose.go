@@ -8,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -360,9 +359,7 @@ func (m *model) editDraft() tea.Cmd {
 		_ = os.Remove(path) // best effort, the write already failed
 		return func() tea.Msg { return errMsg(err) }
 	}
-	editor := strings.Fields(cmp.Or(os.Getenv("VISUAL"), os.Getenv("EDITOR"), "vi"))
-	cmd := exec.Command(editor[0], append(editor[1:], path)...) // #nosec G204 G702 -- the editor is the user's own setting
-	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+	return tea.ExecProcess(editorCmd(path), func(err error) tea.Msg {
 		defer os.Remove(path)
 		if err != nil {
 			return editedMsg{err: fmt.Errorf("editor: %w", err)}

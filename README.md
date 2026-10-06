@@ -158,13 +158,42 @@ Per-user topics in the shared project, with resources an admin creates:
 
 ## Setup (per user)
 
-There is no setup with a baked-in build. The first run opens a browser for login, and the token is stored in the OS keychain. On Linux, the keychain is the Secret Service over D-Bus, such as GNOME Keyring or KeePassXC. Without one, mutter can't store the token.
+1. Get your organization's config from its admin, and install it:
 
-To use a different OAuth client, for example during development, write it to `~/Library/Application Support/mutter/config.json` (macOS) or `~/.config/mutter/config.json` (Linux). The file takes precedence over the baked-in client. A file with only `topic` keeps the baked-in client:
+   ```sh
+   mutter config import https://intranet.example.com/mutter.json   # or a local file
+   ```
+
+2. Run `mutter`. The first run opens a browser for login, and the token is stored in the OS keychain. On Linux, the keychain is the Secret Service over D-Bus, such as GNOME Keyring or KeePassXC. Without one, mutter can't store the token.
+
+### Configuration
+
+The config lives in `~/Library/Application Support/mutter/config.json` on macOS and `~/.config/mutter/config.json` on Linux, readable only by the user.
+
+| Command | Does |
+|---|---|
+| `mutter config init [--force]` | writes an empty config to fill in |
+| `mutter config edit` | opens it in `$VISUAL` or `$EDITOR`, and checks it when the editor exits |
+| `mutter config import [--force] FILE\|URL` | installs a config from a file or an https URL, after checking it |
+
+| Key | Value |
+|---|---|
+| `client_id`, `client_secret` | the organization's Desktop OAuth client. Required. Desktop client secrets aren't confidential. |
+| `topic` | `projects/PROJECT/topics/TOPIC`, a topic shared by all users, see [Isolating users](#isolating-users) |
+| `topic_project` | `PROJECT`, a project with a topic per user. Set this or `topic`, not both. |
+
+Without a topic, mutter works but has no live updates, and refreshes a space when it's opened.
 
 ```json
-{"client_id": "....apps.googleusercontent.com", "client_secret": "...", "topic": "projects/<PROJECT_ID>/topics/mutter-events"}
+{
+  "client_id": "....apps.googleusercontent.com",
+  "client_secret": "...",
+  "topic": "projects/<PROJECT_ID>/topics/mutter-events",
+  "topic_project": ""
+}
 ```
+
+A build with values baked in through `-ldflags` uses them when there is no config file.
 
 ## Usage
 

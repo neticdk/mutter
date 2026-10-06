@@ -10,7 +10,8 @@ Everything is one `main` package, split into files by concern:
 
 | File | Owns |
 |---|---|
-| `main.go` | config, wiring, debug mode |
+| `main.go` | wiring, logging and cache setup, the `config` subcommand dispatch |
+| `config.go` | `config.json`, its check, and `mutter config init`, `edit` and `import` |
 | `auth.go` | OAuth login with PKCE, token storage in the keychain |
 | `chat.go` | Chat API client: spaces, threads, sending, title cache |
 | `events.go` | Workspace Events and Pub/Sub subscriptions, event handling |

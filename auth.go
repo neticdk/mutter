@@ -39,12 +39,6 @@ var scopes = []string{
 	pubsub.PubsubScope,
 }
 
-type config struct {
-	ClientID     string `json:"client_id"`
-	ClientSecret string `json:"client_secret"`
-	Topic        string `json:"topic"` // projects/P/topics/T for live events
-}
-
 func (c config) oauth() *oauth2.Config {
 	return &oauth2.Config{
 		ClientID:     c.ClientID,

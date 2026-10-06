@@ -1,12 +1,9 @@
 package main
 
 import (
-	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -20,6 +17,13 @@ var version = "dev"
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "--version" {
 		fmt.Println("mutter", version)
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "config" {
+		if err := configMain(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "mutter config:", err)
+			os.Exit(1)
+		}
 		return
 	}
 	if err := run(); err != nil {
@@ -84,36 +88,4 @@ func run() error {
 		}
 	}
 	return err
-}
-
-// Set with -ldflags "-X main.clientID=... -X main.clientSecret=... -X main.topic=...".
-// Desktop OAuth client secrets are not confidential.
-var clientID, clientSecret, topic string
-
-func loadConfig() (config, error) {
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		return config{}, err
-	}
-	path := filepath.Join(dir, "mutter", "config.json")
-	b, err := os.ReadFile(path) // #nosec G304 -- path is in the user's config dir
-	if errors.Is(err, fs.ErrNotExist) && clientID != "" {
-		return config{ClientID: clientID, ClientSecret: clientSecret, Topic: topic}, nil
-	}
-	if err != nil {
-		return config{}, fmt.Errorf("read OAuth client config: %w", err)
-	}
-	var cfg config
-	if err := json.Unmarshal(b, &cfg); err != nil {
-		return config{}, fmt.Errorf("%s: %w", path, err)
-	}
-	if cfg.ClientID == "" && cfg.ClientSecret == "" {
-		// A file that only sets the topic keeps the baked-in client.
-		cfg.ClientID, cfg.ClientSecret = clientID, clientSecret
-	}
-	if cfg.ClientID == "" || cfg.ClientSecret == "" {
-		return config{}, fmt.Errorf("%s: client_id and client_secret are required", path)
-	}
-	cfg.Topic = cmp.Or(cfg.Topic, topic)
-	return cfg, nil
 }
