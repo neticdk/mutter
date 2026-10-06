@@ -1,8 +1,6 @@
 version := `git describe --tags --always --dirty 2>/dev/null || echo dev`
 
-# The OAuth client and topic are baked in when set, for an organization's own
-# build. Releases leave them out.
-ldflags := "-X main.version=" + version + " -X main.clientID=" + env("MUTTER_CLIENT_ID", "") + " -X main.clientSecret=" + env("MUTTER_CLIENT_SECRET", "") + " -X main.topic=" + env("MUTTER_TOPIC", "") + " -X main.topicProject=" + env("MUTTER_TOPIC_PROJECT", "")
+ldflags := "-X main.version=" + version
 
 # List the recipes.
 default:

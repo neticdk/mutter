@@ -18,12 +18,6 @@ import (
 	"time"
 )
 
-// Set with -ldflags "-X main.clientID=... -X main.clientSecret=... -X main.topic=...
-// -X main.topicProject=...". Public releases leave them empty, and an
-// organization that builds its own binary may bake its values in. Desktop
-// OAuth client secrets are not confidential.
-var clientID, clientSecret, topic, topicProject string
-
 // config is config.json. Topic and TopicProject pick the live update mode:
 // one topic shared by everyone, or a topic per user in a project.
 type config struct {
@@ -67,18 +61,14 @@ func configPath() (string, error) {
 	return filepath.Join(dir, "mutter", "config.json"), nil
 }
 
-// loadConfig reads config.json, or uses the baked-in values when there is
-// none. A file that sets only the topic keeps the baked-in client.
+// loadConfig reads config.json.
 func loadConfig() (config, error) {
 	path, err := configPath()
 	if err != nil {
 		return config{}, err
 	}
 	b, err := os.ReadFile(path) // #nosec G304 -- path is in the user's config dir
-	baked := config{ClientID: clientID, ClientSecret: clientSecret, Topic: topic, TopicProject: topicProject}
 	switch {
-	case errors.Is(err, fs.ErrNotExist) && clientID != "":
-		return baked, nil
 	case errors.Is(err, fs.ErrNotExist):
 		return config{}, fmt.Errorf("no config at %s: run mutter config import or mutter config init, see the README", path)
 	case err != nil:
@@ -87,12 +77,6 @@ func loadConfig() (config, error) {
 	var cfg config
 	if err := json.Unmarshal(b, &cfg); err != nil {
 		return config{}, fmt.Errorf("%s: %w", path, err)
-	}
-	if cfg.ClientID == "" && cfg.ClientSecret == "" {
-		cfg.ClientID, cfg.ClientSecret = baked.ClientID, baked.ClientSecret
-	}
-	if cfg.Topic == "" && cfg.TopicProject == "" {
-		cfg.Topic, cfg.TopicProject = baked.Topic, baked.TopicProject
 	}
 	if err := cfg.check(); err != nil {
 		return config{}, fmt.Errorf("%s: %w", path, err)

@@ -48,7 +48,7 @@ func TestConfigCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// No config and nothing baked in points at the commands.
+	// No config points at the commands.
 	if _, err := loadConfig(); err == nil || !strings.Contains(err.Error(), "mutter config import") {
 		t.Errorf("loadConfig without a config = %v", err)
 	}

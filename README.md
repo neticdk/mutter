@@ -59,14 +59,6 @@ Publish the config `mutter admin setup` wrote where users can fetch it, such as 
 
 Users install it with `mutter config import`, see [Setup (per user)](#setup-per-user). Without a topic, mutter runs without live updates.
 
-An organization that would rather hand out a binary can bake the values in. A build with values uses them when there is no config file:
-
-```
-MUTTER_CLIENT_ID=<ID> MUTTER_CLIENT_SECRET=<SECRET> MUTTER_TOPIC=projects/<PROJECT_ID>/topics/mutter-events just build
-```
-
-For per-user topics, set `MUTTER_TOPIC_PROJECT=<PROJECT_ID>` in place of `MUTTER_TOPIC`.
-
 On start, mutter subscribes the user to events from all their spaces through the Workspace Events API, delivered to the topic. On a shared topic, each machine pulls from its own filtered Pub/Sub subscription, which deletes itself after 31 days unused. With per-user topics, mutter pulls from the user's provisioned subscription.
 
 ### Publish releases
@@ -178,8 +170,6 @@ Without a topic, mutter works but has no live updates, and refreshes a space whe
   "topic_project": ""
 }
 ```
-
-A build with values baked in through `-ldflags` uses them when there is no config file.
 
 ## Usage
 
@@ -364,7 +354,7 @@ Needs Go, [just](https://github.com/casey/just) and golangci-lint. gosec and gov
 |---|---|
 | `just check` | format check, lint, gosec, govulncheck and tests, as CI runs them |
 | `just cover` | print total test coverage and write `coverage.html` |
-| `just build` | build `./mutter`, baking in `MUTTER_CLIENT_ID`, `MUTTER_CLIENT_SECRET` and `MUTTER_TOPIC` when set |
+| `just build` | build `./mutter` |
 | `just run ARGS` | build and run |
 | `just fmt` | format with gofumpt and goimports |
 | `just fix` | modernize the code with `go fix` |
