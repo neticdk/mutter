@@ -8,7 +8,7 @@ Written 2026-10-06 against commit `6f33aae`.
 ### Today: shared topic
 
 - One GCP project, one run of `scripts/setup.sh`, three console steps (Chat app config, Internal OAuth branding, Desktop OAuth client).
-- The admin builds and hands out a binary with the client and topic baked in.
+- The admin publishes a config with the client and topic. Users install the public release and run `mutter config import`.
 - Users only log in. Each client creates its own Workspace Events subscriptions and filtered Pub/Sub subscriptions (`ensurePubsubSub` in `events.go`).
 - Pub/Sub subscriptions unused for 31 days delete themselves.
 - Without a topic, mutter still works and refreshes when a space is opened.

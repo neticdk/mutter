@@ -34,7 +34,4 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          MUTTER_CLIENT_ID: ${{ secrets.MUTTER_CLIENT_ID }}
-          MUTTER_CLIENT_SECRET: ${{ secrets.MUTTER_CLIENT_SECRET }}
-          MUTTER_TOPIC: ${{ secrets.MUTTER_TOPIC }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ steps.tap-token.outputs.token }}

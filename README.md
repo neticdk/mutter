@@ -69,27 +69,34 @@ The Chat API rejects calls until the project has a Chat app configuration, even 
 2. Choose application type **Desktop app** and name it `mutter`.
 3. Copy the client ID and client secret.
 
-### 5. Build and distribute
+### 5. Distribute the config
 
-Bake the client into the binary. Desktop client secrets are not confidential, because Google treats installed apps as public clients.
+Write the organization's config and publish it where users can fetch it, such as an intranet page or a private repository. Desktop client secrets are not confidential, because Google treats installed apps as public clients.
+
+```json
+{
+  "client_id": "<ID>",
+  "client_secret": "<SECRET>",
+  "topic": "projects/<PROJECT_ID>/topics/mutter-events"
+}
+```
+
+Users install it with `mutter config import`, see [Setup (per user)](#setup-per-user). Without a topic, mutter runs without live updates.
+
+An organization that would rather hand out a binary can bake the values in. A build with values uses them when there is no config file:
 
 ```
-go build -ldflags "-X main.clientID=<ID> -X main.clientSecret=<SECRET> -X main.topic=projects/<PROJECT_ID>/topics/mutter-events" -o mutter .
+MUTTER_CLIENT_ID=<ID> MUTTER_CLIENT_SECRET=<SECRET> MUTTER_TOPIC=projects/<PROJECT_ID>/topics/mutter-events just build
 ```
-
-Hand out the resulting `mutter` binary. Without `main.topic`, mutter runs without live updates.
 
 On start, mutter subscribes the user to events from all their spaces through the Workspace Events API, delivered to the topic. Each machine pulls from its own filtered Pub/Sub subscription, which deletes itself after 31 days unused.
 
 ### 6. Publish releases
 
-Releases build in GitHub Actions when a `v*` tag is pushed, with GoReleaser (`.goreleaser.yaml`, `.github/workflows/release.yml`). They cover macOS and Linux on amd64 and arm64, with the OAuth client and topic baked in from repository secrets:
+Releases build in GitHub Actions when a `v*` tag is pushed, with GoReleaser (`.goreleaser.yaml`, `.github/workflows/release.yml`). They cover macOS and Linux on amd64 and arm64, and carry no organization's client or topic, so one release serves every organization. The workflow needs one secret:
 
 | Secret | Value |
 |---|---|
-| `MUTTER_CLIENT_ID` | the Desktop OAuth client ID |
-| `MUTTER_CLIENT_SECRET` | its client secret |
-| `MUTTER_TOPIC` | `projects/<PROJECT_ID>/topics/mutter-events` |
 | `TAP_APP_PRIVATE_KEY` | private key of a GitHub App installed on `neticdk/netic-homebrew-tap` with Contents and Pull requests write access |
 
 The app's Client ID goes in the repository variable `TAP_APP_CLIENT_ID`. Each release mints a token from the app that lasts an hour and reaches only the tap.

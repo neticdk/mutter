@@ -39,7 +39,14 @@ gcloud steps done. Three steps have no CLI or API, so do them in the console:
 3. OAuth client of type Desktop app:
    https://console.cloud.google.com/auth/clients/create?project=$project
 
-Then build mutter with the client baked in, so users need no setup:
+Then publish this config where your users can fetch it, such as an
+intranet page, with the client ID and secret filled in:
 
-   go build -ldflags "-X main.clientID=<ID> -X main.clientSecret=<SECRET> -X main.topic=projects/$project/topics/$topic" -o mutter .
+   {
+     "client_id": "<ID>",
+     "client_secret": "<SECRET>",
+     "topic": "projects/$project/topics/$topic"
+   }
+
+Users install it with: mutter config import <file or https URL>
 EOF

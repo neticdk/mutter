@@ -7,10 +7,9 @@ builds:
     goarch: [amd64, arm64]
     ldflags:
       - -s -w
+      # Releases carry no organization's client or topic. Each organization
+      # hands out a config for mutter config import.
       - -X main.version={{ .Version }}
-      - -X main.clientID={{ .Env.MUTTER_CLIENT_ID }}
-      - -X main.clientSecret={{ .Env.MUTTER_CLIENT_SECRET }}
-      - -X main.topic={{ .Env.MUTTER_TOPIC }}
 
 archives:
   - formats: [tar.gz]
