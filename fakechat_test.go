@@ -174,11 +174,19 @@ func (f *fakeChat) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var out []*chat.SearchMessageResult
 		for _, sp := range f.spaces {
 			for _, msg := range f.msgs[sp.Name] {
-				if strings.Contains(msg.Text, in.Filter) {
-					out = append(out, &chat.SearchMessageResult{Message: msg})
+				if in.Filter == mentionsFilter && !mentions(msg, fakeMe) || in.Filter != mentionsFilter && !strings.Contains(msg.Text, in.Filter) {
+					continue
 				}
+				res := &chat.SearchMessageResult{Message: msg}
+				if in.View == "SEARCH_MESSAGES_VIEW_FULL" {
+					// Read up to the start, like the read state endpoints.
+					res.Read = !isUnread(msg.CreateTime, "2026-10-01T09:00:00Z")
+				}
+				out = append(out, res)
 			}
 		}
+		// The API returns the newest first.
+		slices.Reverse(out)
 		reply(chat.SearchMessagesResponse{Results: out})
 	case r.Method == http.MethodPost && path == "spaces":
 		var in chat.Space

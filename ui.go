@@ -95,18 +95,19 @@ type model struct {
 	live    bool
 	liveErr error
 
-	focused  bool            // terminal has focus, so the open space counts as read
-	holdRead bool            // /unread was used, so don't mark the open space read
-	newBelow int             // threads that arrived below the cursor
-	notice   string          // shown in place of the hints until the next key press
-	help     bool            // the help overlay covers the messages
-	viewing  string          // image ref the viewer shows over the messages, or ""
-	found    []*chat.Message // /find results
-	foundIdx int
-	gotoMsg  string // message to select once its space has loaded
-	giphyKey string // from GIPHY_API_KEY, empty turns /gif off
-	gifs     []gifResult
-	gifIdx   int // selected GIF in the picker
+	focused    bool   // terminal has focus, so the open space counts as read
+	holdRead   bool   // /unread was used, so don't mark the open space read
+	newBelow   int    // threads that arrived below the cursor
+	notice     string // shown in place of the hints until the next key press
+	help       bool   // the help overlay covers the messages
+	viewing    string // image ref the viewer shows over the messages, or ""
+	found      []hit  // /find and /mentions results
+	foundTitle string // what the results are, such as "mentions"
+	foundIdx   int
+	gotoMsg    string // message to select once its space has loaded
+	giphyKey   string // from GIPHY_API_KEY, empty turns /gif off
+	gifs       []gifResult
+	gifIdx     int // selected GIF in the picker
 
 	// Message actions. selecting means arrows picked a message, so letter
 	// keys act on it.
@@ -786,6 +787,8 @@ func (m model) submit() (tea.Model, tea.Cmd) {
 		return m, m.renameCmd(strings.TrimPrefix(text, "/rename"))
 	case "/invite":
 		return m, m.inviteCmd(strings.TrimPrefix(text, "/invite"))
+	case "/mentions":
+		return m, m.mentionsCmd()
 	case "/find":
 		return m, m.findCmd(strings.TrimPrefix(text, "/find"))
 	case "/gif":

@@ -67,7 +67,7 @@ Measure with the API call counts in `mutter.log` at `MUTTER_LOG_LEVEL=debug` bef
 
 ## 6. Finding what needs you
 
-- [ ] **Mentions inbox**: `/mentions` lists unread messages that mention you across all spaces and jumps to them, through search with `annotations.user_mentions.user.name:users/me is_unread()`
+- [x] **Mentions inbox**: `/mentions` lists recent mentions across all spaces, unread first, and jumps to them. Read state comes from the search API and from what mutter read itself, since thread reads in mutter never reach the server.
 - [ ] **Next unread thread**: one key moves to the next thread with new replies, in the open space and then the next
 - [ ] **Triage mode**: step through every unread thread in every space, one at a time, with reply, react, mark read, skip and open
 - [ ] **Mute and unmute**: `/mute` and `/unmute` through `spaceNotificationSetting.patch`

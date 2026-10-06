@@ -223,6 +223,7 @@ Dropping an image file on the terminal pastes its path, and mutter attaches the 
 | Command | Action |
 |---|---|
 | `/find QUERY` | search messages in every space you're in, newest first. ↑ ↓ pick, enter opens the thread with the message selected. Plain words search text, and the [API's filters](https://developers.google.com/workspace/chat/api/reference/rest/v1/spaces.messages/search) work too, such as `has_link()`, `is_unread()` or `sender.name = "users/kn@example.com"`. |
+| `/mentions` | recent messages that mention you across all spaces, unread first and marked `●`. Enter opens the thread. Mentions read in mutter count as read even though the API can't learn it. |
 | `/dm WHO` | open or start a DM. `WHO` is an email address, a short name such as `kn` tried at your own domain first, or part of a name. |
 | `/new NAME` | create a space with only you in it, and open it |
 | `/rename NAME` | rename the open space |

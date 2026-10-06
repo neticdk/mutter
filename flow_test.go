@@ -438,3 +438,34 @@ func TestFlowThreadReadElsewhere(t *testing.T) {
 	fl.tm.Send(threadReadMsg{root.Thread.Name, "2026-10-01T13:00:00Z"})
 	fl.waitFor(func() bool { return !strings.Contains(fl.screen(), "2 new") }, "the marker to clear")
 }
+
+func TestFlowMentions(t *testing.T) {
+	f := newFakeChat(t)
+	f.addSpace("spaces/A", "Platform")
+	f.addSpace("spaces/B", "Incidents")
+	mention := []*chat.Annotation{{Type: "USER_MENTION", UserMention: &chat.UserMentionMetadata{User: &chat.User{Name: fakeMe}}}}
+	root := f.post("spaces/A", "", "users/alice", "Deploy is blocked")
+	reply := f.post("spaces/A", root.Thread.Name, "users/bob", "@me1 can you look")
+	top := f.post("spaces/B", "", "users/carol", "@me1 ping")
+	f.mu.Lock()
+	reply.Annotations, top.Annotations = mention, mention
+	f.mu.Unlock()
+
+	fl := startFlow(t, f)
+	fl.see("@me1 ping") // B opens first, which reads it
+
+	fl.typeText("/mentions")
+	fl.key(tea.KeyEnter)
+	fl.see("2 mentions · 1 unread")
+
+	// The unread one comes first, and opening it reads it.
+	fl.key(tea.KeyEnter)
+	fl.see("› thread")
+	fl.see("can you look")
+	fl.key(tea.KeyEscape) // ends the selection
+	fl.key(tea.KeyEscape) // leaves the thread
+	fl.typeText("/mentions")
+	fl.key(tea.KeyEnter)
+	fl.see("2 mentions")
+	fl.waitFor(func() bool { return !strings.Contains(fl.screen(), "unread") }, "both mentions to count as read")
+}

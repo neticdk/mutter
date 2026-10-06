@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -15,9 +16,22 @@ const (
 	maxSearchResults = 100
 )
 
+// mentionsFilter finds messages that mention the user. Read state is
+// marked per result instead of filtered with is_unread(), since the API
+// can't learn about threads read in mutter.
+const mentionsFilter = "annotations.user_mentions.user.name:users/me"
+
 type searchMsg struct {
-	query   string
-	results []*chat.Message
+	title   string // what the list is, such as "mentions"
+	empty   string // the notice when nothing matched
+	results []hit
+}
+
+// hit is a search result. unread is the server's read state, which
+// showResults corrects with what mutter read itself.
+type hit struct {
+	msg    *chat.Message
+	unread bool
 }
 
 // findCmd runs /find QUERY across every space the user is in. The query
@@ -29,30 +43,83 @@ func (m *model) findCmd(q string) tea.Cmd {
 		m.notice = "usage: /find QUERY"
 		return nil
 	}
+	return m.search(q, "matches", "no messages match "+q)
+}
+
+// mentionsCmd runs /mentions: recent messages that mention the user,
+// unread first.
+func (m *model) mentionsCmd() tea.Cmd {
+	return m.search(mentionsFilter, "mentions", "no mentions of you")
+}
+
+// search runs filter across every space. The full view carries each
+// result's read state.
+func (m *model) search(filter, title, empty string) tea.Cmd {
 	m.notice = "searching…"
 	ctx, c := m.ctx, m.c
 	return func() tea.Msg {
-		r, err := c.svc.Spaces.Messages.Search("spaces/-", &chat.SearchMessagesRequest{Filter: q, PageSize: maxSearchResults}).Context(ctx).Do()
+		r, err := c.svc.Spaces.Messages.Search("spaces/-", &chat.SearchMessagesRequest{Filter: filter, PageSize: maxSearchResults, View: "SEARCH_MESSAGES_VIEW_FULL"}).Context(ctx).Do()
 		if err != nil {
 			return errMsg(fmt.Errorf("search: %w", err))
 		}
-		out := make([]*chat.Message, 0, len(r.Results))
+		out := make([]hit, 0, len(r.Results))
 		for _, x := range r.Results {
 			if x.Message != nil {
-				out = append(out, x.Message)
+				out = append(out, hit{x.Message, !x.Read})
 			}
 		}
-		return searchMsg{q, out}
+		return searchMsg{title, empty, out}
 	}
 }
 
+// readHere reports whether mutter has seen msg read: its space read since
+// for a top-level message, its thread for a reply. Thread reads in mutter
+// never reach the server, so search results don't reflect them.
+func (m *model) readHere(msg *chat.Message) bool {
+	if m.inThread != nil && msg.Thread != nil && m.inThread.name == msg.Thread.Name {
+		return true
+	}
+	space := spaceOf(msg.Name)
+	if !msg.ThreadReply {
+		r := m.readTimes[space]
+		return r != "" && !isUnread(msg.CreateTime, r)
+	}
+	threads := m.threads
+	if m.cur < 0 || m.spaces[m.cur].name != space {
+		threads = nil
+		if c := m.mem[space]; c != nil {
+			threads = c.threads
+		}
+	}
+	for _, t := range threads {
+		if msg.Thread != nil && t.name == msg.Thread.Name {
+			return t.readAt != "" && !isUnread(msg.CreateTime, t.readAt)
+		}
+	}
+	return false
+}
+
+// showResults opens the list, unread first and otherwise newest first, as
+// the API returns them.
 func (m *model) showResults(msg searchMsg) {
 	if len(msg.results) == 0 {
-		m.notice = "no messages match " + msg.query
+		m.notice = msg.empty
 		return
 	}
+	for i, h := range msg.results {
+		msg.results[i].unread = h.unread && !m.readHere(h.msg)
+	}
+	slices.SortStableFunc(msg.results, func(a, b hit) int {
+		switch {
+		case a.unread == b.unread:
+			return 0
+		case a.unread:
+			return -1
+		}
+		return 1
+	})
 	m.notice = ""
-	m.mode, m.found, m.foundIdx = modeFind, msg.results, 0
+	m.mode, m.found, m.foundTitle, m.foundIdx = modeFind, msg.results, msg.title, 0
 }
 
 // updateFind handles the results: arrows move, enter opens the message's
@@ -66,9 +133,9 @@ func (m model) updateFind(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.foundIdx = min(len(m.found)-1, m.foundIdx+1)
 		return m, nil
 	case keyEnter:
-		hit := m.found[m.foundIdx]
+		h := m.found[m.foundIdx]
 		m.mode, m.found = "", nil
-		return m, m.gotoMessage(hit.Name)
+		return m, m.gotoMessage(h.msg.Name)
 	}
 	m.mode, m.found = "", nil
 	return m, nil
@@ -120,16 +187,31 @@ func (m *model) finishGoto() {
 func (m *model) findView(height int) string {
 	rows := max(1, height-2)
 	start := min(max(0, m.foundIdx-rows/2), max(0, len(m.found)-rows))
-	lines := []string{boldStyle.Render(fmt.Sprintf("%d %s", len(m.found), plural(len(m.found), "match", "matches"))), ""}
+	unread := 0
+	for _, h := range m.found {
+		if h.unread {
+			unread++
+		}
+	}
+	head := fmt.Sprintf("%d %s", len(m.found), m.foundTitle)
+	if unread > 0 {
+		head += fmt.Sprintf(" · %d unread", unread)
+	}
+	lines := []string{boldStyle.Render(head), ""}
 	for i := start; i < min(len(m.found), start+rows); i++ {
-		msg := m.found[i]
+		msg := m.found[i].msg
 		where := spaceOf(msg.Name)
 		if j := m.spaceIndex(where); j >= 0 {
 			where = m.spaces[j].title
 		}
 		text, _, _ := strings.Cut(clean(customEmojiNames(msg)), "\n")
-		head := fmt.Sprintf("%s · %s · %s", truncate(clean(where), 24), truncate(senderName(msg), 20), when(msg.CreateTime))
-		line := truncate(head+"  "+dimStyle.Render(text), m.width-2)
+		meta := fmt.Sprintf("%s · %s · %s", truncate(clean(where), 24), truncate(senderName(msg), 20), when(msg.CreateTime))
+		line := truncate(meta+"  "+dimStyle.Render(text), m.width-4)
+		if m.found[i].unread {
+			line = newDot() + line
+		} else {
+			line = "  " + line
+		}
 		if i == m.foundIdx {
 			line = selStyle.Render("▶ ") + line
 		} else {
