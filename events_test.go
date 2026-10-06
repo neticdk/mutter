@@ -62,3 +62,13 @@ func TestHandleUserEvents(t *testing.T) {
 		t.Errorf("availability event sent %#v", got)
 	}
 }
+
+func TestUserTopic(t *testing.T) {
+	topic, sub := userTopic("acme-chat", "users/112233")
+	if topic != "projects/acme-chat/topics/mutter-user-112233" || sub != "projects/acme-chat/subscriptions/mutter-user-112233" {
+		t.Errorf("userTopic = %s, %s", topic, sub)
+	}
+	if !topicName.MatchString(topic) {
+		t.Errorf("%s isn't a valid topic name", topic)
+	}
+}

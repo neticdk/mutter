@@ -78,7 +78,7 @@ Measure with the API call counts in `mutter.log` at `MUTTER_LOG_LEVEL=debug` bef
 
 ## 7. Rollout to colleagues
 
-- [ ] Per-user Pub/Sub topics, see [Isolating users](README.md#isolating-users). Blocks rollout beyond one team.
+- [x] Per-user Pub/Sub topics, see [Isolating users](README.md#isolating-users): `topic_project` in the config, `setup.sh --per-user`, and the provisioning script in [docs/organizations.md](docs/organizations.md#provisioning-per-user-topics). Not yet run against a real project.
 - [x] Help overlay with keys and commands, on `/help` or F1
 
 Ideas that aren't planned, and what the Chat API blocks, are in [IDEAS.md](IDEAS.md).

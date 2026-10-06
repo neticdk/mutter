@@ -53,8 +53,8 @@ func run() error {
 		return err
 	}
 	ch := make(chan tea.Msg, 64)
-	if cfg.Topic != "" {
-		go runEvents(ctx, hc, c, cfg.Topic, ch)
+	if cfg.Topic != "" || cfg.TopicProject != "" {
+		go runEvents(ctx, hc, c, cfg, ch)
 	} else {
 		ch <- liveMsg{errors.New("no topic configured, live updates off")}
 	}

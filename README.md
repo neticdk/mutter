@@ -129,9 +129,9 @@ The script downloads the archive for the machine, checks it against `checksums.t
 
 ### Isolating users
 
-**Status: planned.** mutter currently uses one shared topic, as set up above.
+mutter supports both: a shared topic, as set up above, and a topic per user, with `setup.sh --per-user` and `topic_project` in the config.
 
-#### Exposure today
+#### Exposure on a shared topic
 
 - All users' events go to the shared `mutter-events` topic. Each client filters for its own events with a per-machine subscription.
 - A filter only limits what its own subscription receives. Anyone who can attach a subscription to the topic receives every event on it.
@@ -139,25 +139,26 @@ The script downloads the archive for the machine, checks it against `checksums.t
 - Events carry no message content, because mutter subscribes with `includeResource=false`. Reading a message still needs the reader's own Chat access.
 - What leaks is activity metadata: space and message IDs, timestamps, and read-state changes, meaning who reads which space and when.
 
-#### Recommended setup
+#### Per-user topics
 
-Per-user topics in the shared project, with resources an admin creates:
+Recommended beyond one team. A topic per user in the shared project, with resources an admin creates:
 
 | Resource | Per | Notes |
 |---|---|---|
-| Topic `mutter-<user>` | user | `chat-api-push@system.gserviceaccount.com` has Pub/Sub Publisher on it |
-| Subscription `mutter-<user>` | user | the user has `roles/pubsub.subscriber` on this subscription only |
+| Topic `mutter-user-<id>` | user | `chat-api-push@system.gserviceaccount.com` has Pub/Sub Publisher on it |
+| Subscription `mutter-user-<id>` | user | the user has `roles/pubsub.subscriber` on this subscription only |
 | Project-wide Pub/Sub role | nobody | users can't attach to topics they weren't given |
 
 - A provisioning script creates these for every member of the group and runs on a schedule. See [Provisioning per-user topics](docs/organizations.md#provisioning-per-user-topics).
-- mutter derives the topic and subscription names from the user's email and stops creating subscriptions itself.
-- One subscription per user means two machines running mutter at once split the events between them. mutter should detect this and warn.
+- `<id>` is the user's numeric Google account ID, which stays the same when their email changes.
+- mutter derives both names from the ID and creates no Pub/Sub resources. It still creates the user's Workspace Events subscriptions, which deliver to the user's topic.
+- One subscription per user means two machines running mutter at once split the events between them, so each misses some live updates. Opening a space still loads it in full.
 
 #### Alternatives considered
 
 | Option | Isolation | Cost |
 |---|---|---|
-| Shared topic (current) | metadata visible within the group | Pub/Sub delivery grows with users², since filtered-out messages are billed |
+| Shared topic | metadata visible within the group | Pub/Sub delivery grows with users², since filtered-out messages are billed |
 | Topic per user in a shared project (recommended) | full | admin-created topics and subscriptions |
 | Project per user | full | each user needs a billing-enabled project they own, and runs setup themselves |
 

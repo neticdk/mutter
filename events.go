@@ -94,13 +94,20 @@ type events struct {
 	ws    *workspaceevents.Service
 	ps    *pubsub.Service
 	topic string // projects/P/topics/T
+	// sub is the subscription an admin provisioned for the user's own topic,
+	// or "" on a shared topic, where each machine makes its own.
+	sub   string
 	start time.Time
 	out   chan<- tea.Msg
 }
 
 // runEvents delivers Chat events into out until ctx ends, resubscribing after
-// errors.
-func runEvents(ctx context.Context, hc *http.Client, c *client, topic string, out chan<- tea.Msg) {
+// errors, on the shared topic or the user's own topic as cfg says.
+func runEvents(ctx context.Context, hc *http.Client, c *client, cfg config, out chan<- tea.Msg) {
+	topic, sub := cfg.Topic, ""
+	if cfg.TopicProject != "" {
+		topic, sub = userTopic(cfg.TopicProject, c.meID)
+	}
 	ws, err := workspaceevents.NewService(ctx, option.WithHTTPClient(hc))
 	if err != nil {
 		out <- liveMsg{err}
@@ -111,7 +118,7 @@ func runEvents(ctx context.Context, hc *http.Client, c *client, topic string, ou
 		out <- liveMsg{err}
 		return
 	}
-	e := &events{c: c, ws: ws, ps: ps, topic: topic, start: time.Now(), out: out}
+	e := &events{c: c, ws: ws, ps: ps, topic: topic, sub: sub, start: time.Now(), out: out}
 	for ctx.Err() == nil {
 		err := e.run(ctx)
 		slog.Warn("live updates", "err", err)
@@ -133,22 +140,27 @@ func (e *events) run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("read state subscription: %w", err)
 	}
-	// One Pub/Sub subscription each, because a filter matching both
-	// subscription names exceeds Pub/Sub's 256-character filter limit.
-	spacesSub, err := e.ensurePubsubSub(ctx, spaces, "")
-	if err != nil {
-		return fmt.Errorf("pub/sub subscription: %w", err)
+	pulls := []string{e.sub}
+	if e.sub == "" {
+		// One Pub/Sub subscription each, because a filter matching both
+		// subscription names exceeds Pub/Sub's 256-character filter limit.
+		spacesSub, err := e.ensurePubsubSub(ctx, spaces, "")
+		if err != nil {
+			return fmt.Errorf("pub/sub subscription: %w", err)
+		}
+		userSub, err := e.ensurePubsubSub(ctx, user, "-readstate")
+		if err != nil {
+			return fmt.Errorf("pub/sub read state subscription: %w", err)
+		}
+		pulls = []string{spacesSub, userSub}
 	}
-	userSub, err := e.ensurePubsubSub(ctx, user, "-readstate")
-	if err != nil {
-		return fmt.Errorf("pub/sub read state subscription: %w", err)
-	}
-	slog.Info("live updates connected", "spaces", spaces, "user", user, "pubsub", spacesSub, "pubsubUser", userSub)
+	slog.Info("live updates connected", "spaces", spaces, "user", user, "pubsub", pulls)
 	e.out <- liveMsg{}
 
 	g, gctx := errgroup.WithContext(ctx)
-	g.Go(func() error { return e.pull(gctx, spacesSub) })
-	g.Go(func() error { return e.pull(gctx, userSub) })
+	for _, sub := range pulls {
+		g.Go(func() error { return e.pull(gctx, sub) })
+	}
 	g.Go(func() error {
 		for {
 			select {
@@ -171,6 +183,9 @@ func (e *events) run(ctx context.Context) error {
 func (e *events) pull(ctx context.Context, sub string) error {
 	for {
 		r, err := e.ps.Projects.Subscriptions.Pull(sub, &pubsub.PullRequest{MaxMessages: 50}).Context(ctx).Do()
+		if isNotFound(err) || isForbidden(err) {
+			return fmt.Errorf("pull %s: it doesn't exist or isn't yours, ask your admin to provision it: %w", sub, err)
+		}
 		if err != nil {
 			return fmt.Errorf("pull: %w", err)
 		}
@@ -202,10 +217,10 @@ func (e *events) ensureWorkspaceSub(ctx context.Context, target string, types []
 		return "", err
 	}
 	for _, s := range r.Subscriptions {
-		if s.NotificationEndpoint == nil || s.NotificationEndpoint.PubsubTopic != e.topic {
-			continue
-		}
-		if s.State == "ACTIVE" && sameSet(s.EventTypes, types) {
+		// A subscription to another topic is left from a switch between
+		// shared and per-user topics, and replaced.
+		onTopic := s.NotificationEndpoint != nil && s.NotificationEndpoint.PubsubTopic == e.topic
+		if onTopic && s.State == "ACTIVE" && sameSet(s.EventTypes, types) {
 			return s.Name, e.renew(ctx, s.Name)
 		}
 		slog.Info("replacing subscription", "name", s.Name, "state", s.State, "types", s.EventTypes)
@@ -455,6 +470,14 @@ func readStateThread(name string) string {
 		return name
 	}
 	return strings.Join(parts[2:6], "/")
+}
+
+// userTopic names the topic and subscription an admin provisions for the
+// user meID in project. The account ID stays the same when an email
+// changes.
+func userTopic(project, meID string) (topic, sub string) {
+	name := "mutter-user-" + strings.TrimPrefix(meID, "users/")
+	return "projects/" + project + "/topics/" + name, "projects/" + project + "/subscriptions/" + name
 }
 
 func sameSet(a, b []string) bool {
