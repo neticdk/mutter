@@ -8,7 +8,7 @@ require (
 	charm.land/huh/v2 v2.0.3
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/charmbracelet/x/exp/golden v0.1.0
-	github.com/charmbracelet/x/exp/teatest/v2 v2.0.0-20261001101533-953920dd3285
+	github.com/charmbracelet/x/exp/teatest/v2 v2.0.0-20261012121918-43427fdbad12
 	github.com/charmbracelet/x/vt v0.0.0-20261001101533-953920dd3285
 	github.com/kyokomi/emoji/v2 v2.2.14
 	github.com/zalando/go-keyring v0.2.8
