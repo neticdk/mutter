@@ -4,20 +4,20 @@ go 1.27.1
 
 require (
 	charm.land/bubbles/v2 v2.2.1
-	charm.land/bubbletea/v2 v2.0.10
+	charm.land/bubbletea/v2 v2.1.0
 	charm.land/huh/v2 v2.0.3
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/charmbracelet/x/exp/golden v0.1.0
 	github.com/charmbracelet/x/exp/teatest/v2 v2.0.0-20261001101533-953920dd3285
-	github.com/charmbracelet/x/vt v0.0.0-20261001101533-953920dd3285
+	github.com/charmbracelet/x/vt v0.1.0
 	github.com/kyokomi/emoji/v2 v2.2.14
 	github.com/zalando/go-keyring v0.2.8
 	golang.design/x/clipboard v0.11.0
-	golang.org/x/image v0.46.0
+	golang.org/x/image v0.47.0
 	golang.org/x/oauth2 v0.37.0
-	golang.org/x/sync v0.23.0
-	golang.org/x/sys v0.48.0
-	google.golang.org/api v0.300.0
+	golang.org/x/sync v0.24.0
+	golang.org/x/sys v0.49.0
+	google.golang.org/api v0.303.0
 )
 
 require (
@@ -88,7 +88,7 @@ require (
 	golang.org/x/telemetry v0.0.0-20260908163034-4bcc4b2ee518 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/tools v0.50.0 // indirect
-	golang.org/x/vuln v1.8.0 // indirect
+	golang.org/x/vuln v1.9.0 // indirect
 	google.golang.org/genai v1.69.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260921155816-b14227669459 // indirect
 	google.golang.org/grpc v1.84.0 // indirect
