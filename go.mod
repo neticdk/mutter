@@ -17,7 +17,7 @@ require (
 	golang.org/x/oauth2 v0.37.0
 	golang.org/x/sync v0.24.0
 	golang.org/x/sys v0.49.0
-	google.golang.org/api v0.308.0
+	google.golang.org/api v0.309.0
 )
 
 require (
